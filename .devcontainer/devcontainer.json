@@ -1,0 +1,56 @@
+{
+  "name": "uav vineyard Development Environment",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "workspaceFolder": "/workspaces/uav_vineyard",
+  "remoteUser": "ros",
+  "runArgs": [
+    "--net=host",
+    "--privileged",
+    "--name=uav_vineyard_dev",
+    "--volume=/tmp/.X11-unix:/tmp/.X11-unix",
+    "--env=DISPLAY=${localEnv:DISPLAY}",
+    "--env=QT_X11_NO_MITSHM=1",
+    "--device-cgroup-rule=c 189:* rw",
+    "--security-opt=seccomp:unconfined",
+    "--security-opt=apparmor:unconfined",
+    "--ipc=host"
+  ],
+  "containerEnv": {
+    "DISPLAY": "${localEnv:DISPLAY}",
+    "WAYLAND_DISPLAY": "${localEnv:WAYLAND_DISPLAY}",
+    "XDG_RUNTIME_DIR": "${localEnv:XDG_RUNTIME_DIR}",
+    "PULSE_SERVER": "${localEnv:PULSE_SERVER}",
+    "QT_X11_NO_MITSHM": "1"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "althack.ament-task-provider",
+        "betwo.b2-catkin-tools",
+        "DotJoshJohnson.xml",
+        "ms-azuretools.vscode-docker",
+        "ms-python.python",
+        "ms-vscode.cpptools",
+        "redhat.vscode-yaml",
+        "smilerobotics.urdf",
+        "twxs.cmake",
+        "ms-vscode.cmake-tools",
+        "ms-vscode.makefile-tools",
+        "yzhang.markdown-all-in-one",
+        "zachflower.uncrustify",
+        "charliermarsh.ruff",
+        "hyperoot.settings-organizer",
+        "Gruntfuggly.todo-tree",
+        "johnpapa.vscode-peacock",
+        "Ranch-Hand-Robotics.rde-ros-2"
+      ],
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "python.defaultInterpreterPath": "/usr/bin/python3"
+      }
+    }
+  }
+}
