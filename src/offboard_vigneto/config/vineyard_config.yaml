@@ -1,0 +1,14 @@
+# Parametri geometrici del vigneto
+prato_size: 100.0       # dimensione del prato (m)
+lateral_spacing: 5.0    # spazio laterale dal bordo del prato ai filari (m)
+row_length: 90.0        # lunghezza di ciascun filare (m)
+row_spacing: 2.3        # distanza tra i filari (m)
+num_rows: 40            # numero di filari
+post_spacing: 3         # distanza tra pali (m)
+post_height: 2          # altezza dei pali (m)
+post_diameter: 0.4      # diametro dei pali (m)
+
+# Stazione di decollo / controllo
+station_position: [-3.0, -2.0, 0.0]
+
+

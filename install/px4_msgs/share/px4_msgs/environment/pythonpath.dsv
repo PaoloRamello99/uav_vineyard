@@ -1,1 +1,1 @@
-prepend-non-duplicate;PYTHONPATH;lib/python3.12/site-packages
+/workspaces/uav_vineyard/build/px4_msgs/ament_cmake_environment_hooks/pythonpath.dsv

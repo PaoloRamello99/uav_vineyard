@@ -1,1 +1,1 @@
-prepend-non-duplicate;AMENT_PREFIX_PATH;
+/workspaces/uav_vineyard/build/px4_msgs/ament_cmake_environment_hooks/ament_prefix_path.dsv

@@ -1,0 +1,9 @@
+source;share/vigneto/hook/pythonpath.ps1
+source;share/vigneto/hook/pythonpath.dsv
+source;share/vigneto/hook/pythonpath.sh
+source;share/vigneto/hook/ament_prefix_path.ps1
+source;share/vigneto/hook/ament_prefix_path.dsv
+source;share/vigneto/hook/ament_prefix_path.sh
+source;../../build/vigneto/share/vigneto/hook/pythonpath_develop.ps1
+source;../../build/vigneto/share/vigneto/hook/pythonpath_develop.dsv
+source;../../build/vigneto/share/vigneto/hook/pythonpath_develop.sh

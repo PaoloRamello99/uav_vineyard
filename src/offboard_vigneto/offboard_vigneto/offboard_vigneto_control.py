@@ -49,7 +49,7 @@ class VineyardOffboard(Node):
         # Timer
         self.timer_period = 0.02  # seconds (50 Hz)
         self.timer = self.create_timer(self.timer_period, self.cmdloop_callback)
-        self.dt = self.timer_period  # delta time comodo da usare
+        self.dt = self.timer_period  # delta time
 
         # Parametri configurabili
         self.declare_parameter('row_length', 20.0)   # metri, lunghezza filare

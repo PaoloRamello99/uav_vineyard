@@ -1,5 +1,1 @@
-uint64 timestamp        		# time since system start (microseconds)
-
-float32 normalized_setpoint          	# [0, 1]
-
-# TOPICS flaps_setpoint spoilers_setpoint
+/workspaces/uav_vineyard/src/px4_msgs/msg/NormalizedUnsignedSetpoint.msg

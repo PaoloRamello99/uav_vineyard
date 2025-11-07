@@ -1,4 +1,1 @@
-# Rover Attitude Setpoint
-
-uint64 timestamp      # [us] Time since system start
-float32 yaw_setpoint  # [rad] [@range -inf, inf] [@frame NED] Yaw setpoint
+/workspaces/uav_vineyard/src/px4_msgs/msg/RoverAttitudeSetpoint.msg

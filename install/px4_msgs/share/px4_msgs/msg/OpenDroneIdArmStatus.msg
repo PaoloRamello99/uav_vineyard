@@ -1,3 +1,1 @@
-uint64 timestamp
-uint8 status
-char[50] error
+/workspaces/uav_vineyard/src/px4_msgs/msg/OpenDroneIdArmStatus.msg

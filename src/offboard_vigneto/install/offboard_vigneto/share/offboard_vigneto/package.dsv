@@ -1,0 +1,6 @@
+source;share/offboard_vigneto/hook/pythonpath.ps1
+source;share/offboard_vigneto/hook/pythonpath.dsv
+source;share/offboard_vigneto/hook/pythonpath.sh
+source;share/offboard_vigneto/hook/ament_prefix_path.ps1
+source;share/offboard_vigneto/hook/ament_prefix_path.dsv
+source;share/offboard_vigneto/hook/ament_prefix_path.sh
