@@ -1,26 +1,13 @@
-/**:
+vineyard_offboard:
   ros__parameters:
-
-    # === Coordinate base (in metri, riferimento globale del vigneto) ===
-    station_x: 0.0        # Posizione della stazione di partenza
-    station_y: 0.0
-    station_z: 2.0
-
-    # === Area del vigneto ===
-    field_origin_x: 10.0  # Dove iniziano i filari (offset rispetto alla stazione)
-    field_origin_y: 0.0
-    row_length: 80.0
-    row_spacing: 2.0
-    num_rows: 40
-    altitude: 2.5
-
-    # === Velocità (m/s) ===
+    home_x: 0.0
+    home_y: -5.0
+    first_row_x: -10.0
+    first_row_y: 0.0
+    row_length: 20.0
+    row_spacing: 2.5
+    num_rows: 10
     speed: 1.0
     lateral_speed: 0.5
-
-    # === Soglie operative ===
-    battery_low_threshold: 20.0      # %
-    battery_critical_threshold: 10.0 # %
-    pesticide_low_threshold: 20.0    # %
-    refill_complete_threshold: 99.0  # % per far ripartire il drone
-
+    transit_speed: 2.0
+    altitude: 2.5

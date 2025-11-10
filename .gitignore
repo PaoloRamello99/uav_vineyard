@@ -207,3 +207,8 @@ marimo/_lsp/
 __marimo__/
 .vscode/browse.vc.db
 .vscode/browse.vc.db
+
+# build, install and log
+build/
+install/
+log/

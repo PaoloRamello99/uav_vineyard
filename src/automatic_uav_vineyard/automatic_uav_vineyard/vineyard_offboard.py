@@ -11,6 +11,7 @@ import rclpy
 import numpy as np
 
 from rclpy.node import Node
+from std_msgs.msg import Int32, String
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSHistoryPolicy, QoSDurabilityPolicy
 from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleStatus
 
@@ -44,37 +45,49 @@ class VineyardOffboard(Node):
             OffboardControlMode, 'fmu/in/offboard_control_mode', qos_profile_pub)
         self.publisher_trajectory = self.create_publisher(
             TrajectorySetpoint, 'fmu/in/trajectory_setpoint', qos_profile_pub)
-
+    
         # Timer principale (50 Hz)
         self.timer_period = 0.02
         self.timer = self.create_timer(self.timer_period, self.cmdloop_callback)
         self.dt = self.timer_period
 
         # Parametri configurabili
-        self.declare_parameter('home_x', 0.0)           # posizione X della stazione
-        self.declare_parameter('home_y', -5.0)          # posizione Y della stazione
-        self.declare_parameter('first_row_x', -10.0)    # posizione X del primo filare
-        self.declare_parameter('first_row_y', 0.0)      # posizione Y del primo filare
-        self.declare_parameter('row_length', 20.0)      # lunghezza filare (m)
-        self.declare_parameter('row_spacing', 2.5)      # distanza tra filari (m)
-        self.declare_parameter('num_rows', 10)          # numero di filari
-        self.declare_parameter('speed', 1.0)            # velocità lungo filare (m/s)
-        self.declare_parameter('lateral_speed', 0.5)    # velocità laterale (m/s)
-        self.declare_parameter('transit_speed', 2.0)    # velocità per il transito (m/s)
-        self.declare_parameter('altitude', 2.5)         # quota sopra terreno (m)
+        self.declare_parameter('home_x')
+        self.declare_parameter('home_y')
+        self.declare_parameter('first_row_x')
+        self.declare_parameter('first_row_y')
+        self.declare_parameter('row_length')
+        self.declare_parameter('row_spacing')
+        self.declare_parameter('num_rows')
+        self.declare_parameter('speed')
+        self.declare_parameter('lateral_speed')
+        self.declare_parameter('transit_speed')
+        self.declare_parameter('altitude')
+
+        #self.declare_parameter('home_x', 0.0)           # posizione X della stazione
+        #self.declare_parameter('home_y', -5.0)          # posizione Y della stazione
+        #self.declare_parameter('first_row_x', -10.0)    # posizione X del primo filare
+        #self.declare_parameter('first_row_y', 0.0)      # posizione Y del primo filare
+        #self.declare_parameter('row_length', 20.0)      # lunghezza filare (m)
+        #self.declare_parameter('row_spacing', 2.5)      # distanza tra filari (m)
+        #self.declare_parameter('num_rows', 10)          # numero di filari
+        #self.declare_parameter('speed', 1.0)            # velocità lungo filare (m/s)
+        #self.declare_parameter('lateral_speed', 0.5)    # velocità laterale (m/s)
+        #self.declare_parameter('transit_speed', 2.0)    # velocità per il transito (m/s)
+        #self.declare_parameter('altitude', 2.5)         # quota sopra terreno (m)
 
         # Lettura parametri
-        self.home_x = float(self.get_parameter('home_x').value)
-        self.home_y = float(self.get_parameter('home_y').value)
-        self.first_row_x = float(self.get_parameter('first_row_x').value)
-        self.first_row_y = float(self.get_parameter('first_row_y').value)
-        self.row_length = float(self.get_parameter('row_length').value)
-        self.row_spacing = float(self.get_parameter('row_spacing').value)
-        self.num_rows = int(self.get_parameter('num_rows').value)
-        self.speed = float(self.get_parameter('speed').value)
-        self.lateral_speed = float(self.get_parameter('lateral_speed').value)
-        self.transit_speed = float(self.get_parameter('transit_speed').value)
-        self.altitude = float(self.get_parameter('altitude').value)
+        self.home_x = self.get_parameter('home_x').get_parameter_value().double_value
+        self.home_y = self.get_parameter('home_y').get_parameter_value().double_value
+        self.first_row_x = self.get_parameter('first_row_x').get_parameter_value().double_value
+        self.first_row_y = self.get_parameter('first_row_y').get_parameter_value().double_value
+        self.row_length = self.get_parameter('row_length').get_parameter_value().double_value
+        self.row_spacing = self.get_parameter('row_spacing').get_parameter_value().double_value
+        self.num_rows = self.get_parameter('num_rows').get_parameter_value().integer_value
+        self.speed = self.get_parameter('speed').get_parameter_value().double_value
+        self.lateral_speed = self.get_parameter('lateral_speed').get_parameter_value().double_value
+        self.transit_speed = self.get_parameter('transit_speed').get_parameter_value().double_value
+        self.altitude = self.get_parameter('altitude').get_parameter_value().double_value
 
         # Stato interno
         self.nav_state = VehicleStatus.NAVIGATION_STATE_MAX
@@ -257,6 +270,7 @@ class VineyardOffboard(Node):
             traj_msg.position[2] = 0.0  # scende a terra
             traj_msg.yaw = 0.0
             self.publisher_trajectory.publish(traj_msg)
+            self.arming_state == VehicleStatus.ARMING_STATE_DISARMED
             self.get_logger().info("Atterraggio completato. Missione finita.")
 
         # Log per monitoraggio
