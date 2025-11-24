@@ -1,1 +1,3 @@
-/workspaces/uav_vineyard/src/px4_msgs/srv/VehicleCommand.srv
+VehicleCommand request
+---
+VehicleCommandAck reply
