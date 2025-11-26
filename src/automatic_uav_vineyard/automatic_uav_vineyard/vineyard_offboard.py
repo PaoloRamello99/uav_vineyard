@@ -51,9 +51,10 @@ class VineyardOffboard(Node):
         self.timer = self.create_timer(self.timer_period, self.cmdloop_callback)
         self.dt = self.timer_period
 
-        # Parametri configurabili
+        # Parametri vigneto
         self.declare_parameter('home_x')
         self.declare_parameter('home_y')
+        self.declare_parameter('home_z')
         self.declare_parameter('first_row_x')
         self.declare_parameter('first_row_y')
         self.declare_parameter('row_length')
@@ -79,6 +80,7 @@ class VineyardOffboard(Node):
         # Lettura parametri
         self.home_x = self.get_parameter('home_x').get_parameter_value().double_value
         self.home_y = self.get_parameter('home_y').get_parameter_value().double_value
+        self.home_z = self.get_parameter('home_z').get_parameter_value().double_value
         self.first_row_x = self.get_parameter('first_row_x').get_parameter_value().double_value
         self.first_row_y = self.get_parameter('first_row_y').get_parameter_value().double_value
         self.row_length = self.get_parameter('row_length').get_parameter_value().double_value
@@ -96,6 +98,7 @@ class VineyardOffboard(Node):
         # Posizione iniziale (stazione)
         self.x = self.home_x
         self.y = self.home_y
+        self.z = self.home_z
         self.direction = 1  # +1 = x crescente, -1 = x decrescente
         self.current_row = 0
 
@@ -104,10 +107,9 @@ class VineyardOffboard(Node):
         self.takeoff_timer = 0.0
         self.shift_progress = 0.0
 
-        # Precalcola intervalli X del filare (usati per clamp/reached_end)
-        # Il filare è definito a partire da first_row_x verso first_row_x + row_length (asse X)
-        self.row_x_min = min(self.first_row_x, self.first_row_x + self.row_length)
-        self.row_x_max = max(self.first_row_x, self.first_row_x + self.row_length)
+        # Range filare
+        self.row_x_min = self.first_row_x
+        self.row_x_max = self.first_row_x + self.row_length
 
         self.get_logger().info("Nodo vineyard_offboard avviato: pronto per decollo.")
 
@@ -158,7 +160,6 @@ class VineyardOffboard(Node):
             dx = target_x - self.x
             dy = target_y - self.y
             dist = np.hypot(dx, dy)
-
             # passo basato sulla velocità di transito
             step = self.transit_speed * self.dt
 
@@ -267,7 +268,7 @@ class VineyardOffboard(Node):
         elif self.state == 'land':
             traj_msg.position[0] = self.home_x
             traj_msg.position[1] = self.home_y
-            traj_msg.position[2] = 0.0  # scende a terra
+            traj_msg.position[2] = self.home_z  # scende a terra
             traj_msg.yaw = 0.0
             self.publisher_trajectory.publish(traj_msg)
             self.arming_state == VehicleStatus.ARMING_STATE_DISARMED

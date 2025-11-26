@@ -1,24 +1,41 @@
 #!/usr/bin/env python3
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import xml.etree.ElementTree as ET
+from config.load_vineyard_params import load_vineyard_params
 
-# -----------------------------
-# Vineyard parameters
-# -----------------------------
+# Carica la configurazione dei parametri del vigneto
+params = load_vineyard_params()
 
-ground_size_x = 200  # meters
-ground_size_y = 200  # meters
+ground_size_x = params["ground_size_x"]
+ground_size_y = params["ground_size_y"]
+first_row_x = params["first_row_x"]
+first_row_y = params["first_row_y"]
+row_length = params["row_length"]
+row_spacing = params["row_spacing"]
+num_rows = params["num_rows"]
+z_poles = params["z_poles"]
+pole_radius = params["pole_radius"]
+plant_spacing = params["plant_spacing"]
+plant_wood_height = params["plant_wood_height"]
+home_x = params["home_x"]
+home_y = params["home_y"]
+home_z = params["home_z"]
 
-first_row_x = -10.0
-first_row_y = 20.0
-row_length = 20.0
-row_spacing = 2.5
-num_rows = 10
-
-z_poles = 2.0
-pole_radius = 0.2
-
-plant_spacing = 0.5
-plant_wood_height = 0.8
+#ground_size_x = 200  # meters
+#ground_size_y = 200  # meters
+#first_row_x = -10.0
+#first_row_y = 20.0
+#row_length = 20.0
+#row_spacing = 2.5
+#num_rows = 10
+#z_poles = 2.0
+#pole_radius = 0.2
+#plant_spacing = 0.5
+#plant_wood_height = 0.8
 
 # -----------------------------
 # SDF ROOT + WORLD
@@ -162,6 +179,13 @@ for row in range(num_rows):
     material_crown = ET.SubElement(visual_crown, "material")
     ET.SubElement(material_crown, "ambient").text = "0.0 0.25 0.0 1"
     ET.SubElement(material_crown, "diffuse").text = "0.0 0.45 0.0 1"
+
+# -----------------------------
+# Aruco tag
+# -----------------------------
+include = ET.SubElement(world, "include")
+ET.SubElement(include, "uri").text = "model://arucotag"
+ET.SubElement(include, "pose").text = f"{float(home_x)} {float(home_y)} {float(home_z)} 0 0 0"
 
 # -----------------------------
 # Geo Reference
