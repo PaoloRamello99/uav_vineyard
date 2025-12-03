@@ -68,7 +68,7 @@ class VineyardOffboard(Node):
         #self.declare_parameter('home_x', 0.0)           # posizione X della stazione
         #self.declare_parameter('home_y', -5.0)          # posizione Y della stazione
         #self.declare_parameter('first_row_x', -10.0)    # posizione X del primo filare
-        #self.declare_parameter('first_row_y', 0.0)      # posizione Y del primo filare
+        #self.declare_parameter('first_row_y', 20.0)     # posizione Y del primo filare
         #self.declare_parameter('row_length', 20.0)      # lunghezza filare (m)
         #self.declare_parameter('row_spacing', 2.5)      # distanza tra filari (m)
         #self.declare_parameter('num_rows', 10)          # numero di filari
@@ -99,17 +99,17 @@ class VineyardOffboard(Node):
         self.x = self.home_x
         self.y = self.home_y
         self.z = self.home_z
-        self.direction = 1  # +1 = x crescente, -1 = x decrescente
-        self.current_row = 0
-
+        
         # Macchina a stati
         self.state = 'takeoff'
         self.takeoff_timer = 0.0
         self.shift_progress = 0.0
+        self.direction = 1 
+        self.current_row = 0
 
         # Range filare
-        self.row_x_min = self.first_row_x
-        self.row_x_max = self.first_row_x + self.row_length
+        self.row_x_min = min(self.first_row_x, self.first_row_x + self.row_length)
+        self.row_x_max = max(self.first_row_x, self.first_row_x + self.row_length)
 
         self.get_logger().info("Nodo vineyard_offboard avviato: pronto per decollo.")
 
@@ -142,7 +142,7 @@ class VineyardOffboard(Node):
         if self.state == 'takeoff':
             traj_msg.position[0] = self.home_x
             traj_msg.position[1] = self.home_y
-            traj_msg.position[2] = -abs(self.altitude)
+            traj_msg.position[2] = -self.altitude
             traj_msg.yaw = 0.0
             self.publisher_trajectory.publish(traj_msg)
 
@@ -154,7 +154,6 @@ class VineyardOffboard(Node):
 
         # 2) Spostamento verso il primo filare (movimento rettilineo con velocità costante)
         elif self.state == 'to_first_row':
-            self.current_row = 1
             target_x = self.first_row_x
             target_y = self.first_row_y
             dx = target_x - self.x
@@ -169,23 +168,21 @@ class VineyardOffboard(Node):
                     self.x += (dx / dist) * step
                     self.y += (dy / dist) * step
                 else:
-                    # raggiunto il target
+                    # raggiunto il primo filare
                     self.x = target_x
                     self.y = target_y
-                    # Setta row_x_min/row_x_max basati sul filare raggiunto
-                    self.row_x_min = min(self.first_row_x, self.first_row_x + self.row_length)
-                    self.row_x_max = max(self.first_row_x, self.first_row_x + self.row_length)
-                    # Inizializza x in intervallo utile (già fatto assegnando self.x = target_x)
-                    # Imposta direction coerente con quale estremo vogliamo raggiungere per primo:
-                    # se target_x è vicino al row_x_min allora muovi verso row_x_max (direction=+1), altrimenti inverti
-                    # Qui assumiamo direction = +1 (da start verso x crescente); l'utente può modificarlo via parametro.
-                    self.direction = 1
+                    # decidi direction in base alla posizione corrente rispetto agli estremi X del filare
+                    if abs(self.x - self.row_x_min) < abs(self.x - self.row_x_max):
+                        self.direction = 1
+                    else:
+                        self.direction = -1
                     self.state = 'along'
+                    self.current_row = 1
                     self.get_logger().info("Raggiunto primo filare: inizio movimento lungo filare.")
-
+                    
             traj_msg.position[0] = float(self.x)
             traj_msg.position[1] = float(self.y)
-            traj_msg.position[2] = -abs(float(self.altitude))
+            traj_msg.position[2] = -float(self.altitude)
             traj_msg.yaw = 0.0
             self.publisher_trajectory.publish(traj_msg)
 
@@ -213,7 +210,7 @@ class VineyardOffboard(Node):
 
             traj_msg.position[0] = float(self.x)
             traj_msg.position[1] = float(self.y)
-            traj_msg.position[2] = -abs(float(self.altitude))
+            traj_msg.position[2] = -float(self.altitude)
             traj_msg.yaw = 0.0 if self.direction == 1 else np.pi
             self.publisher_trajectory.publish(traj_msg)
 
@@ -223,7 +220,7 @@ class VineyardOffboard(Node):
             lateral_step = self.lateral_speed * self.dt
             self.shift_progress += lateral_step
             # Progress bar: assegna alla y il valore (non cumulativo) per evitare errori numerici
-            target_y = (self.current_row + 1) * self.row_spacing
+            target_y = self.first_row_y + (self.current_row) * self.row_spacing
             self.y = min(target_y, self.y + lateral_step)
 
             # Controllo completamento spostamento
@@ -237,7 +234,7 @@ class VineyardOffboard(Node):
 
             traj_msg.position[0] = float(self.x)
             traj_msg.position[1] = float(self.y)
-            traj_msg.position[2] = -abs(float(self.altitude))
+            traj_msg.position[2] = -float(self.altitude)
             traj_msg.yaw = 0.0 if self.direction == 1 else np.pi
             self.publisher_trajectory.publish(traj_msg)
 
@@ -260,7 +257,7 @@ class VineyardOffboard(Node):
 
             traj_msg.position[0] = float(self.x)
             traj_msg.position[1] = float(self.y)
-            traj_msg.position[2] = -abs(float(self.altitude))
+            traj_msg.position[2] = -float(self.altitude)
             traj_msg.yaw = np.pi
             self.publisher_trajectory.publish(traj_msg)
 
@@ -271,12 +268,15 @@ class VineyardOffboard(Node):
             traj_msg.position[2] = self.home_z  # scende a terra
             traj_msg.yaw = 0.0
             self.publisher_trajectory.publish(traj_msg)
-            self.arming_state == VehicleStatus.ARMING_STATE_DISARMED
-            self.get_logger().info("Atterraggio completato. Missione finita.")
+            self.dz = abs(self.z - self.home_z)
+
+            if self.dz < 1e-6:
+                self.arming_state = VehicleStatus.ARMING_STATE_DISARMED
+                self.get_logger().info("Atterraggio completato. Missione finita.")
 
         # Log per monitoraggio
         self.get_logger().info(
-            f"Stato={self.state} | Fila={self.current_row}/{self.num_rows} | X={self.x:.2f} | Y={self.y:.2f} | dir={'←' if self.direction==1 else '→'}"
+            f"Stato={self.state} | Fila={self.current_row}/{self.num_rows} | X={self.x:.2f} | Y={self.y:.2f} "
         )
 
 

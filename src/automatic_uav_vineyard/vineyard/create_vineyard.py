@@ -98,14 +98,21 @@ material_ground = ET.SubElement(visual_ground, "material")
 ET.SubElement(material_ground, "ambient").text = "0.5 1.0 0.5 1"
 ET.SubElement(material_ground, "diffuse").text = "0.6 1.0 0.6 1"
 
-# Vineyard poles
+# -----------------------------
+# Vineyard poles, plants and crowns
+# Filare ORIENTATO LUNGO X (x varia), shift tra filari su Y (y varia)
+# -----------------------------
 for row in range(num_rows):
-    x_pos = first_row_x + row * row_spacing
-    y_start = first_row_y
-    y_end = first_row_y + row_length
+    # y cambia per ciascun filare (shift lungo Y)
+    y_pos_row = first_row_y + row * row_spacing
 
-    for y_pos in [y_start, y_end]:
-        pole_name = f"pole_{row}_{int(y_pos)}"
+    # filare esteso in X da first_row_x a first_row_x + row_length
+    x_start = first_row_x
+    x_end = first_row_x + row_length
+
+    # crea pali ai due estremi del filare: (x_start, y_pos_row) e (x_end, y_pos_row)
+    for x_pos in [x_start, x_end]:
+        pole_name = f"pole_{row}_{int(round(y_pos_row))}_{int(round(x_pos))}"
 
         # Collision
         collision_pole = ET.SubElement(link, "collision", name=f"{pole_name}_collision")
@@ -113,7 +120,7 @@ for row in range(num_rows):
         cylinder_pole = ET.SubElement(geometry_pole, "cylinder")
         ET.SubElement(cylinder_pole, "radius").text = str(pole_radius)
         ET.SubElement(cylinder_pole, "length").text = str(z_poles)
-        ET.SubElement(collision_pole, "pose").text = f"{x_pos} {y_pos} {z_poles/2} 0 0 0"
+        ET.SubElement(collision_pole, "pose").text = f"{x_pos} {y_pos_row} {z_poles/2} 0 0 0"
 
         # Visual
         visual_pole = ET.SubElement(link, "visual", name=f"{pole_name}_visual")
@@ -121,22 +128,17 @@ for row in range(num_rows):
         cylinder_visual_pole = ET.SubElement(geometry_visual_pole, "cylinder")
         ET.SubElement(cylinder_visual_pole, "radius").text = str(pole_radius)
         ET.SubElement(cylinder_visual_pole, "length").text = str(z_poles)
-        ET.SubElement(visual_pole, "pose").text = f"{x_pos} {y_pos} {z_poles/2} 0 0 0"
+        ET.SubElement(visual_pole, "pose").text = f"{x_pos} {y_pos_row} {z_poles/2} 0 0 0"
 
         material_pole = ET.SubElement(visual_pole, "material")
         ET.SubElement(material_pole, "ambient").text = "0.55 0.27 0.07 1"
         ET.SubElement(material_pole, "diffuse").text = "0.65 0.32 0.17 1"
 
-# Vineyard plants + crowns
-for row in range(num_rows):
-    x_pos = first_row_x + row * row_spacing
-    y_start = first_row_y
-    y_end = first_row_y + row_length
-    num_plants = int(row_length / plant_spacing)
-
-    # Trunks
+    # Trunks (plants) ALONG X: genera piante lungo l'asse X all'interno del filare
+    num_plants = max(1, int(row_length / plant_spacing))
     for i in range(1, num_plants):
-        y_pos = y_start + i * plant_spacing
+        x_pos = x_start + i * plant_spacing
+        y_pos = y_pos_row
         plant_name = f"plant_{row}_{i}"
 
         collision_trunk = ET.SubElement(link, "collision", name=f"{plant_name}_trunk_collision")
@@ -157,35 +159,36 @@ for row in range(num_rows):
         ET.SubElement(material_trunk, "ambient").text = "0.4 0.25 0.1 1"
         ET.SubElement(material_trunk, "diffuse").text = "0.5 0.3 0.15 1"
 
-    # Crowns
+    # Crown (chioma) che copre il filare: box orientato lungo X
     crown_height = z_poles - plant_wood_height
     crown_z_center = plant_wood_height + crown_height / 2
-    crown_length = row_length - 2 * pole_radius
-    crown_y_center = y_start + row_length / 2
+    crown_length_x = row_length - 2 * pole_radius  # lunghezza lungo X
+    crown_x_center = first_row_x + row_length / 2
     crown_name = f"crown_row_{row}"
 
     collision_crown = ET.SubElement(link, "collision", name=f"{crown_name}_collision")
     geometry_crown = ET.SubElement(collision_crown, "geometry")
     box_crown = ET.SubElement(geometry_crown, "box")
-    ET.SubElement(box_crown, "size").text = f"0.6 {crown_length} {crown_height}"
-    ET.SubElement(collision_crown, "pose").text = f"{x_pos} {crown_y_center} {crown_z_center} 0 0 0"
+    # size: (size_x, size_y, size_z) -> qui size_x = crown_length_x, size_y = 0.6 (spessore), size_z = crown_height
+    ET.SubElement(box_crown, "size").text = f"{crown_length_x} 0.6 {crown_height}"
+    ET.SubElement(collision_crown, "pose").text = f"{crown_x_center} {y_pos_row} {crown_z_center} 0 0 0"
 
     visual_crown = ET.SubElement(link, "visual", name=f"{crown_name}_visual")
     geometry_visual_crown = ET.SubElement(visual_crown, "geometry")
     box_visual_crown = ET.SubElement(geometry_visual_crown, "box")
-    ET.SubElement(box_visual_crown, "size").text = f"0.6 {crown_length} {crown_height}"
-    ET.SubElement(visual_crown, "pose").text = f"{x_pos} {crown_y_center} {crown_z_center} 0 0 0"
+    ET.SubElement(box_visual_crown, "size").text = f"{crown_length_x} 0.6 {crown_height}"
+    ET.SubElement(visual_crown, "pose").text = f"{crown_x_center} {y_pos_row} {crown_z_center} 0 0 0"
 
     material_crown = ET.SubElement(visual_crown, "material")
     ET.SubElement(material_crown, "ambient").text = "0.0 0.25 0.0 1"
     ET.SubElement(material_crown, "diffuse").text = "0.0 0.45 0.0 1"
 
 # -----------------------------
-# Aruco tag
+# Aruco tag (home)
 # -----------------------------
-include = ET.SubElement(world, "include")
-ET.SubElement(include, "uri").text = "model://arucotag"
-ET.SubElement(include, "pose").text = f"{float(home_x)} {float(home_y)} {float(home_z)} 0 0 0"
+#include = ET.SubElement(world, "include")
+#ET.SubElement(include, "uri").text = "model://arucotag"
+#ET.SubElement(include, "pose").text = f"{float(home_x)} {float(home_y)} {float(home_z)} 0 0 0"
 
 # -----------------------------
 # Geo Reference
