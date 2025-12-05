@@ -118,9 +118,35 @@ class VineyardOffboard(Node):
         self.nav_state = msg.nav_state
         self.arming_state = msg.arming_state
 
+    # Funzioni di conversione coordinate
+    def enu_to_ned(self, x_e, y_e, z_e):
+        """
+        Converte coordinate ENU -> NED usando la matrice:
+            [0 1 0
+             1 0 0
+             0 0 -1]
+        Restituisce (x_n, y_n, z_n)
+        """
+        R = np.array([[0.0, 1.0, 0.0],
+                      [1.0, 0.0, 0.0],
+                      [0.0, 0.0,-1.0]])
+        enu = np.array([x_e, y_e, z_e], dtype=float)
+        ned = R.dot(enu)
+        return float(ned[0]), float(ned[1]), float(ned[2])
+
+    def yaw_enu_to_ned(self, yaw_e):
+        """
+        Converte yaw da ENU a NED.
+        yaw_ned = yaw_enu - pi/2 (normalizzato)
+        """
+        yaw_n = float(yaw_e - np.pi/2.0)
+        # normalizza in [-pi, pi]
+        yaw_n = (yaw_n + np.pi) % (2.0*np.pi) - np.pi
+        return yaw_n
+
     # Loop principale
     def cmdloop_callback(self):
-        # Pubblica modalità offboard (deve essere pubblicata continuamente)
+        # Pubblicazione modalità offboard
         offboard_msg = OffboardControlMode()
         offboard_msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         offboard_msg.position = True
@@ -140,10 +166,16 @@ class VineyardOffboard(Node):
         # ---------------------- MACCHINA A STATI ----------------------
         # 1) Decollo verticale
         if self.state == 'takeoff':
-            traj_msg.position[0] = self.home_x
-            traj_msg.position[1] = self.home_y
-            traj_msg.position[2] = -self.altitude
-            traj_msg.yaw = 0.0
+            x_e = self.home_x
+            y_e = self.home_y
+            z_e = self.altitude  # ENU up
+
+            nx, ny, nz = self.enu_to_ned(x_e, y_e, z_e)
+            traj_msg.position[0] = nx
+            traj_msg.position[1] = ny
+            traj_msg.position[2] = nz
+            traj_msg.yaw = float(self.yaw_enu_to_ned(0.0))
+            
             self.publisher_trajectory.publish(traj_msg)
 
             self.takeoff_timer += self.dt
@@ -180,10 +212,11 @@ class VineyardOffboard(Node):
                     self.current_row = 1
                     self.get_logger().info("Raggiunto primo filare: inizio movimento lungo filare.")
                     
-            traj_msg.position[0] = float(self.x)
-            traj_msg.position[1] = float(self.y)
-            traj_msg.position[2] = -float(self.altitude)
-            traj_msg.yaw = 0.0
+            nx, ny, nz = self.enu_to_ned(self.x, self.y, self.altitude)
+            traj_msg.position[0] = nx
+            traj_msg.position[1] = ny
+            traj_msg.position[2] = nz
+            traj_msg.yaw = float(self.yaw_enu_to_ned(0.0))
             self.publisher_trajectory.publish(traj_msg)
 
         # 3) Movimento lungo filare (serpentina)
@@ -208,10 +241,12 @@ class VineyardOffboard(Node):
                     self.state = 'shift'
                     self.shift_progress = 0.0 
 
-            traj_msg.position[0] = float(self.x)
-            traj_msg.position[1] = float(self.y)
-            traj_msg.position[2] = -float(self.altitude)
-            traj_msg.yaw = 0.0 if self.direction == 1 else np.pi
+            nx, ny, nz = self.enu_to_ned(self.x, self.y, self.altitude)
+            traj_msg.position[0] = nx
+            traj_msg.position[1] = ny
+            traj_msg.position[2] = nz
+            yaw_enu = 0.0 if self.direction == 1 else np.pi
+            traj_msg.yaw = float(self.yaw_enu_to_ned(yaw_enu))
             self.publisher_trajectory.publish(traj_msg)
 
         # 4) Spostamento laterale tra filari (mantiene X e transla Y verso filare successivo)
@@ -232,10 +267,12 @@ class VineyardOffboard(Node):
                 self.state = 'along'
                 # Mantieni x all'estremo prima dell'inversione (già impostato)
 
-            traj_msg.position[0] = float(self.x)
-            traj_msg.position[1] = float(self.y)
-            traj_msg.position[2] = -float(self.altitude)
-            traj_msg.yaw = 0.0 if self.direction == 1 else np.pi
+            nx, ny, nz = self.enu_to_ned(self.x, self.y, self.altitude)
+            traj_msg.position[0] = nx
+            traj_msg.position[1] = ny
+            traj_msg.position[2] = nz
+            yaw_enu = 0.0 if self.direction == 1 else np.pi
+            traj_msg.yaw = float(self.yaw_enu_to_ned(yaw_enu))
             self.publisher_trajectory.publish(traj_msg)
 
         # 5) Ritorno alla stazione di partenza (strada più breve)
@@ -255,18 +292,20 @@ class VineyardOffboard(Node):
                     self.state = 'land'
                     self.get_logger().info("Rientrato alla stazione: avvio atterraggio.")
 
-            traj_msg.position[0] = float(self.x)
-            traj_msg.position[1] = float(self.y)
-            traj_msg.position[2] = -float(self.altitude)
-            traj_msg.yaw = np.pi
+            nx, ny, nz = self.enu_to_ned(self.x, self.y, self.altitude)
+            traj_msg.position[0] = nx
+            traj_msg.position[1] = ny
+            traj_msg.position[2] = nz
+            traj_msg.yaw = float(self.yaw_enu_to_ned(np.pi))
             self.publisher_trajectory.publish(traj_msg)
 
         # 6) Atterraggio
         elif self.state == 'land':
-            traj_msg.position[0] = self.home_x
-            traj_msg.position[1] = self.home_y
-            traj_msg.position[2] = self.home_z  # scende a terra
-            traj_msg.yaw = 0.0
+            nx, ny, nz = self.enu_to_ned(self.home_x, self.home_y, self.home_z)
+            traj_msg.position[0] = nx
+            traj_msg.position[1] = ny
+            traj_msg.position[2] = nz
+            traj_msg.yaw = float(self.yaw_enu_to_ned(0.0))
             self.publisher_trajectory.publish(traj_msg)
             self.dz = abs(self.z - self.home_z)
 
@@ -276,7 +315,7 @@ class VineyardOffboard(Node):
 
         # Log per monitoraggio
         self.get_logger().info(
-            f"Stato={self.state} | Fila={self.current_row}/{self.num_rows} | X={self.x:.2f} | Y={self.y:.2f} "
+            f"Stato={self.state} | Fila={self.current_row}/{self.num_rows} | ENU X={self.x:.2f} | Y={self.y:.2f}"
         )
 
 
