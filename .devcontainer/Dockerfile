@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     python3-tk \
     python3-setuptools \
+    python3-venv \
     ros-jazzy-plotjuggler-ros \
     ros-jazzy-ros-gz \
     ros-jazzy-ros-gz-bridge \
@@ -17,21 +18,38 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     sudo \
     && rm -rf /var/lib/apt/lists/*
 
-RUN python3 -m pip config set global.break-system-packages true
+# -------------------------------------------------------------
+# Create virtualenv for JAX and Python packages
+# -------------------------------------------------------------
+RUN python3 -m venv /opt/jax-env && \
+    /opt/jax-env/bin/pip install --upgrade pip && \
+    /opt/jax-env/bin/pip install jax
 
+# Make venv Python first
+ENV PATH="/opt/jax-env/bin:${PATH}"
+ENV VIRTUAL_ENV="/opt/jax-env"
+
+# -------------------------------------------------------------
+# PX4
+# -------------------------------------------------------------
 RUN git clone https://github.com/PX4/PX4-Autopilot.git --branch=main --recursive
 RUN bash ./PX4-Autopilot/Tools/setup/ubuntu.sh
 
+# -------------------------------------------------------------
+# XRCE-DDS Agent
+# -------------------------------------------------------------
 RUN git clone https://github.com/eProsima/Micro-XRCE-DDS-Agent.git && \
     cd Micro-XRCE-DDS-Agent && mkdir build && cd build && \
-    cmake .. && make && make install && ldconfig && \
+    cmake .. && make -j$(nproc) && make install && ldconfig && \
     cd /workspaces && rm -rf Micro-XRCE-DDS-Agent
 
 RUN chown -R ros:ros /workspaces
 
 USER ros
 
-RUN echo "\nsource /opt/ros/jazzy/setup.bash" >> /home/ros/.bashrc && \
+# Activate venv + ROS + workspace
+RUN echo "source /opt/ros/jazzy/setup.bash" >> /home/ros/.bashrc && \
+    echo "source /opt/jax-env/bin/activate" >> /home/ros/.bashrc && \
     echo "if [ -f /workspaces/uav_vineyard/install/setup.bash ]; then source /workspaces/uav_vineyard/install/setup.bash; fi" >> /home/ros/.bashrc
 
 CMD ["/bin/bash"]
