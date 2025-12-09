@@ -1,6 +1,0 @@
-source;share/automatic_uav_vineyard/hook/pythonpath.ps1
-source;share/automatic_uav_vineyard/hook/pythonpath.dsv
-source;share/automatic_uav_vineyard/hook/pythonpath.sh
-source;share/automatic_uav_vineyard/hook/ament_prefix_path.ps1
-source;share/automatic_uav_vineyard/hook/ament_prefix_path.dsv
-source;share/automatic_uav_vineyard/hook/ament_prefix_path.sh
