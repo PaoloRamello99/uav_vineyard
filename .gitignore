@@ -209,6 +209,7 @@ __marimo__/
 .vscode/browse.vc.db
 
 # build, install and log
+.vscode/
 build/
 install/
 log/
