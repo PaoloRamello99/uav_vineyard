@@ -45,16 +45,11 @@
         "hyperoot.settings-organizer",
         "Gruntfuggly.todo-tree",
         "johnpapa.vscode-peacock",
-        "Anthropic.claude-code",
         "Ranch-Hand-Robotics.rde-ros-2"
       ],
       "settings": {
         "terminal.integrated.defaultProfile.linux": "bash",
-        "python.defaultInterpreterPath": "/opt/jax-env/bin/python",
-        "python.analysis.extraPaths": [
-          "/opt/ros/jazzy/lib/python3.10/site-packages",
-          "/workspaces/uav_vineyard/install/lib/python3.10/site-packages"
-        ]
+        "python.defaultInterpreterPath": "/usr/bin/python3"
       }
     }
   }
