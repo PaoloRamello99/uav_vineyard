@@ -43,8 +43,8 @@ class OffboardMPPI(Node):
 
         # ================= Subscribers =================
         self.create_subscription(VehicleOdometry, "/fmu/out/vehicle_odometry", self.odometry_cb, qos_sub)
-        self.create_subscription(VehicleAngularVelocity, "/fmu/out/vehicle_angular_velocity", self.angular_velocity_cb, qos_sub)
-        self.create_subscription(VehicleAttitude, "/fmu/out/vehicle_attitude", self.attitude_cb, qos_sub)
+        #self.create_subscription(VehicleAngularVelocity, "/fmu/out/vehicle_angular_velocity", self.angular_velocity_cb, qos_sub)
+        #self.create_subscription(VehicleAttitude, "/fmu/out/vehicle_attitude", self.attitude_cb, qos_sub)
         self.status_sub = self.create_subscription(VehicleStatus, 'fmu/out/vehicle_status', self.vehicle_status_callback, qos_sub)
         self.status_sub_v1 = self.create_subscription(VehicleStatus, 'fmu/out/vehicle_status_v1', self.vehicle_status_callback, qos_sub)
         
@@ -67,7 +67,6 @@ class OffboardMPPI(Node):
 
         # ================= State =================
         self.state_ned = np.zeros(13, dtype=np.float32)
-        self.state_received = False
         
         # Initialize variables
         self.offboard_setpoint_counter = 0
@@ -91,7 +90,6 @@ class OffboardMPPI(Node):
     def publish_offboard_control_mode(self):
         msg = OffboardControlMode()
         msg.timestamp = self.get_clock().now().nanoseconds // 1000
-
         msg.position = False
         msg.velocity = False
         msg.acceleration = False
@@ -99,7 +97,6 @@ class OffboardMPPI(Node):
         msg.body_rate = True          
         msg.thrust_and_torque = False
         msg.direct_actuator = False
-
         self.offboard_pub.publish(msg)
     
     def arm(self):
@@ -113,13 +110,11 @@ class OffboardMPPI(Node):
         cmd.param5 = 0.0
         cmd.param6 = 0.0
         cmd.param7 = 0.0
-
         cmd.target_system = 1
         cmd.target_component = 1
         cmd.source_system = 1
         cmd.source_component = 1
         cmd.from_external = True
-
         self.cmd_pub.publish(cmd)
     
     def set_offboard_mode(self):
@@ -133,13 +128,11 @@ class OffboardMPPI(Node):
         cmd.param5 = 0.0
         cmd.param6 = 0.0
         cmd.param7 = 0.0
-
         cmd.target_system = 1
         cmd.target_component = 1
         cmd.source_system = 1
         cmd.source_component = 1
         cmd.from_external = True
-
         self.cmd_pub.publish(cmd)
 
 
@@ -149,14 +142,14 @@ class OffboardMPPI(Node):
     def odometry_cb(self, msg):
         self.state_ned[0:3] = msg.position
         self.state_ned[3:6] = msg.velocity
-        
-
-    def attitude_cb(self, msg):
         self.state_ned[6:10] = msg.q
-        self.state_received = True
+        self.state_ned[10:13] = msg.angular_velocity
+        
+    #def attitude_cb(self, msg):
+    #    self.state_ned[6:10] = msg.q
 
-    def angular_velocity_cb(self, msg):
-        self.state_ned[10:13] = msg.xyz
+    #def angular_velocity_cb(self, msg):
+    #    self.state_ned[10:13] = msg.xyz
 
     
     # ================= Publish =================
@@ -184,14 +177,15 @@ class OffboardMPPI(Node):
 
     # ================= Main Loop =================
     def control_loop(self):
-        
+        self.publish_offboard_control_mode()
+
         if not self.offboard_ready:
             self.publish_offboard_control_mode()
-            self.publish_rates(0.75, 0.0, 0.0, 0.0)
+            self.publish_rates(0.55, 0.0, 0.0, 0.0)
+            self.arm()
             
             if self.offboard_setpoint_counter == int(1/self.dt):
                 self.set_offboard_mode()
-                self.arm()
                 self.offboard_ready = True
 
             self.offboard_setpoint_counter += 1
@@ -217,7 +211,6 @@ class OffboardMPPI(Node):
         # -------- MPPI control --------
         u, _, _ = self.mppi.get_control(self.state_ned, ref_ned)
         thrust, p, q, r = u
-        self.get_logger().info(f"MPPI:\n{u}")
 
         # -------- Saturation --------
         thrust_n = np.clip(thrust / self.max_thrust, 0.0, 1.0)
