@@ -9,7 +9,9 @@ import pathlib
 import jax.numpy as jnp
 import numpy as np
 import yaml
+import os
 
+from ament_index_python.packages import get_package_share_directory
 
 def load_mppi_config(config_path=None):
     """
@@ -22,8 +24,8 @@ def load_mppi_config(config_path=None):
         dict: Configuration dictionary with JAX arrays
     """
     if config_path is None:
-        # Use default config in same directory
-        config_path = pathlib.Path(__file__).parent / "mppi_config.yaml"
+        pkg_share = get_package_share_directory("uav_control_py")
+        config_path = pathlib.Path(pkg_share) / "config" / "mppi_config.yaml"
 
     with open(config_path, "r") as f:
         yaml_config = yaml.safe_load(f)
