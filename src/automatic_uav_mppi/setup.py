@@ -1,4 +1,6 @@
 from setuptools import setup
+import os
+from glob import glob
 
 package_name = 'automatic_uav_mppi'
 
@@ -10,6 +12,8 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        (os.path.join('share', 'automatic_uav_mppi', 'launch'),
+        glob('launch/*.launch.py')),
     ],
     install_requires=[
         'setuptools',

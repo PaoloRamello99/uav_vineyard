@@ -16,8 +16,8 @@ class SerpentineMission:
         row_spacing=2.5,
         num_rows=10,
         v_ref=2.0,
-        T_takeoff=3.0,
-        T_landing=3.0,
+        T_takeoff=10.0,
+        T_landing=10.0,
     ):
         self.home = home
         self.first_row = first_row

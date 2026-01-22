@@ -3,6 +3,7 @@
 # Offboard MPPI Rate Control - PX4
 ############################################################################
 
+import os
 import rclpy
 import numpy as np
 
@@ -13,21 +14,21 @@ from px4_msgs.msg import (
     OffboardControlMode,
     VehicleRatesSetpoint,
     VehicleOdometry,
-    VehicleAngularVelocity,
     VehicleStatus,
-    VehicleAttitude,
     VehicleCommand
 )
 
 from uav_control_py.config.config_loader import load_mppi_config
 from uav_control_py.controller.mppi.mppi_rate import MPPIRateController
 from uav_control_py.mission.mission_reference import SerpentineMission
-
-
+#from uav_control_py.mission.lemniscate import LemniscateMission
+from automatic_uav_mppi.Enu2Ned import Enu2NedConverter
 class OffboardMPPI(Node):
 
     def __init__(self):
-        super().__init__("offboard_mppi")
+        super().__init__(
+            "offboard_mppi"
+        )
 
         # ================= QoS =================
         qos_pub = QoSProfile(reliability=QoSReliabilityPolicy.BEST_EFFORT,
@@ -43,8 +44,6 @@ class OffboardMPPI(Node):
 
         # ================= Subscribers =================
         self.create_subscription(VehicleOdometry, "/fmu/out/vehicle_odometry", self.odometry_cb, qos_sub)
-        #self.create_subscription(VehicleAngularVelocity, "/fmu/out/vehicle_angular_velocity", self.angular_velocity_cb, qos_sub)
-        #self.create_subscription(VehicleAttitude, "/fmu/out/vehicle_attitude", self.attitude_cb, qos_sub)
         self.status_sub = self.create_subscription(VehicleStatus, 'fmu/out/vehicle_status', self.vehicle_status_callback, qos_sub)
         self.status_sub_v1 = self.create_subscription(VehicleStatus, 'fmu/out/vehicle_status_v1', self.vehicle_status_callback, qos_sub)
         
@@ -63,22 +62,38 @@ class OffboardMPPI(Node):
 
         # ================= Mission =================
         self.mission = SerpentineMission()
+        #self.mission = LemniscateMission()
         self.t_start = self.get_clock().now().nanoseconds * 1e-9  # mission clock
 
         # ================= State =================
         self.state_ned = np.zeros(13, dtype=np.float32)
+        self.state_ned[6] = 1.0
         
         # Initialize variables
         self.offboard_setpoint_counter = 0
+        self.hover_thrust_norm = (self.config["mass"] * self.config["g"]) / self.config["max_thrust"]
         self.offboard_ready = False
         self.timer = self.create_timer(self.dt, self.control_loop)
-
 
         # ================= Limits =================
         self.max_thrust = self.config["max_thrust"]
         self.rate_min = np.array(self.config["angular_rate_min"])
         self.rate_max = np.array(self.config["angular_rate_max"])
 
+
+        # ================= Logging =================
+        log_dir = "/workspaces/uav_vineyard/src/automatic_uav_mppi/files"
+        os.makedirs(log_dir, exist_ok=True)
+
+        self.log_path = os.path.join(log_dir, "mppi_control_log.txt")
+        self.log_file = open(self.log_path, "w")
+
+        # header
+        self.log_file.write("time,  thrust_N,   thrust_norm,    p,  q,  r | x, y, z\n")
+        self.log_file.flush()
+
+        self.log_counter = 0
+        self.get_logger().info(f"📁 Logging MPPI data to {self.log_path}")
 
 
     # ================= Callbacks =================
@@ -144,34 +159,18 @@ class OffboardMPPI(Node):
         self.state_ned[3:6] = msg.velocity
         self.state_ned[6:10] = msg.q
         self.state_ned[10:13] = msg.angular_velocity
-        
-    #def attitude_cb(self, msg):
-    #    self.state_ned[6:10] = msg.q
-
-    #def angular_velocity_cb(self, msg):
-    #    self.state_ned[10:13] = msg.xyz
-
     
     # ================= Publish =================
-    def publish_rates(self, thrust_n, p, q, r):
+    def publish_rates(self, thrust_cmd, p, q, r):
         msg = VehicleRatesSetpoint()
         msg.timestamp = self.get_clock().now().nanoseconds // 1000  # microseconds
         msg.roll = p
         msg.pitch = q
         msg.yaw = r
-        msg.thrust_body[:] = [0.0, 0.0, -thrust_n]
+        msg.thrust_body[:] = [0.0, 0.0, -thrust_cmd]
         self.rate_pub.publish(msg)
 
-    @staticmethod
-    def enu_to_ned(x_enu):
-        R = np.array([[0,1,0],[1,0,0],[0,0,-1]])
-        x = np.zeros_like(x_enu)
-        x[0:3] = R @ x_enu[0:3]
-        x[3:6] = R @ x_enu[3:6]
-        qw,qx,qy,qz = x_enu[6:10]
-        x[6:10] = [qw, qy, qx, -qz]
-        x[10:13] = x_enu[10:13]
-        return x
+
 
 
 
@@ -181,7 +180,7 @@ class OffboardMPPI(Node):
 
         if not self.offboard_ready:
             self.publish_offboard_control_mode()
-            self.publish_rates(0.55, 0.0, 0.0, 0.0)
+            self.publish_rates(self.hover_thrust_norm, 0.0, 0.0, 0.0)
             self.arm()
             
             if self.offboard_setpoint_counter == int(1/self.dt):
@@ -206,18 +205,32 @@ class OffboardMPPI(Node):
             ref_enu[k] = self.mission.get_reference(t_k)
 
         # -------- Convert ENU -> NED --------
-        ref_ned = np.array([self.enu_to_ned(x) for x in ref_enu], dtype=np.float32)
+        ref_ned = np.array([Enu2NedConverter.enu_to_ned(x) for x in ref_enu])
 
         # -------- MPPI control --------
         u, _, _ = self.mppi.get_control(self.state_ned, ref_ned)
         thrust, p, q, r = u
-
+        
         # -------- Saturation --------
-        thrust_n = np.clip(thrust / self.max_thrust, 0.0, 1.0)
+        thrust_cmd = np.clip(thrust/self.max_thrust, 0.0, 1.0)
         rates = np.clip([p, q, r], self.rate_min, self.rate_max)
 
+        # -------- Log data --------
+        t_log = self.get_clock().now().nanoseconds * 1e-9
+        x, y, z = self.state_ned[0:3]  # estrai posizioni
+        self.log_file.write(
+            f"{t_log:.6f}   {thrust:.3f}    {thrust_cmd:.3f}    "
+            f"{rates[0]:.3f}    {rates[1]:.3f}    {rates[2]:.3f} | "
+            f"{x:.3f}    {y:.3f}    {z:.3f}\n"
+        )
+
+        # flush ogni 20 campioni (~0.4 s)
+        self.log_counter += 1
+        if self.log_counter % 20 == 0:
+            self.log_file.flush()
+
         # -------- Publish rates --------
-        self.publish_rates(thrust_n, rates[0], rates[1], rates[2])
+        self.publish_rates(thrust_cmd, rates[0], rates[1], rates[2])
 
 
 
@@ -229,6 +242,7 @@ def main(args=None):
     rclpy.init(args=args)
     node = OffboardMPPI()
     rclpy.spin(node)
+    node.log_file.close()
     node.destroy_node()
     rclpy.shutdown()
 

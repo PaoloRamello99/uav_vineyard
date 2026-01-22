@@ -233,6 +233,20 @@ def run_simulation():
     dt_sim = 0.02
     steps = int(T_sim / dt_sim)
 
+    # --- LOGGING SETUP ---
+    # Definisce il percorso specifico richiesto
+    log_dir = "/workspaces/uav_vineyard/src/uav_control_py/uav_control_py/table_costs"
+    log_file_path = os.path.join(log_dir, "reference_costs.txt")
+    
+    # Crea la directory se non esiste
+    os.makedirs(log_dir, exist_ok=True)
+    
+    # Inizializza il file (sovrascrive se esiste già o ne crea uno nuovo vuoto)
+    print(f"Logging costs to: {log_file_path}")
+    with open(log_file_path, "w") as f:
+        f.write("")  # Clear file content
+    # ---------------------
+
     # Initial Condition
     current_state = np.array(
         [-1.0, -1.0, 0.5, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -282,7 +296,12 @@ def run_simulation():
         history["cost"].append(min_cost)
 
         if k % 20 == 0:
+            log_str = f"Step {k}/{steps} | Time: {t:.2f}s | Cost: {min_cost:.2f}"
+            # Stampa a video
             print(f"Step {k}/{steps} | Time: {t:.2f}s | Cost: {min_cost:.2f}")
+            # Scrittura su file
+            with open(log_file_path, "a") as f:
+                f.write(log_str + "\n")
 
     print(f"Simulation Complete. Total Time: {time.time() - start_time:.2f}s")
 
