@@ -51,8 +51,16 @@ class SerpentineMission:
 
         # ---------------- TAKEOFF ----------------
         if t < self.t1:
-            z = self.altitude * (t / self.T_takeoff)
-            vz = self.altitude / self.T_takeoff
+            #z = self.altitude * (t / self.T_takeoff)
+            #vz = self.altitude / self.T_takeoff
+
+            tau = t / self.T_takeoff
+            poly_pos = 3 * (tau**2) - 2 * (tau**3)
+            poly_vel = 6 * tau - 6 * (tau**2)  # Derivata del profilo posizione
+            
+            z = self.altitude * poly_pos
+            vz = (self.altitude / self.T_takeoff) * poly_vel
+
             return self._state(self.home[0], self.home[1], z, 0, 0, vz)
 
         # ---------------- TRANSIT ----------------

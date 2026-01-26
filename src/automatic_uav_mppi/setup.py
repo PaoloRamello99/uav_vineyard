@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import find_packages, setup
 import os
 from glob import glob
 
@@ -7,7 +7,7 @@ package_name = 'automatic_uav_mppi'
 setup(
     name=package_name,
     version='0.0.0',
-    packages=[package_name],
+    packages=find_packages(exclude=['test']),
     data_files=[
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
@@ -32,6 +32,8 @@ setup(
     entry_points={
         'console_scripts': [
             'offboard_mppi = automatic_uav_mppi.offboard_mppi:main',
+            'Enu2Ned = automatic_uav_mppi.coordinates_conversion.Enu2Ned:main',
+            'Ned2Enu = automatic_uav_mppi.coordinates_conversion.Ned2Enu:main',
         ],
     },
 )

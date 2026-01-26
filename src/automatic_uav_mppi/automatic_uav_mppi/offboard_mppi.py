@@ -21,15 +21,15 @@ from px4_msgs.msg import (
 from uav_control_py.config.config_loader import load_mppi_config
 from uav_control_py.controller.mppi.mppi_rate import MPPIRateController
 from uav_control_py.mission.mission_reference import SerpentineMission
-#from uav_control_py.mission.lemniscate import LemniscateMission
-from automatic_uav_mppi.Enu2Ned import Enu2NedConverter
+#from automatic_uav_mppi.coordinates_conversion.Enu2Ned import Enu2NedConverter
+from automatic_uav_mppi.coordinates_conversion.Ned2Enu import Ned2EnuConverter
+
 class OffboardMPPI(Node):
 
     def __init__(self):
         super().__init__(
             "offboard_mppi"
         )
-
         # ================= QoS =================
         qos_pub = QoSProfile(reliability=QoSReliabilityPolicy.BEST_EFFORT,
                              durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
@@ -58,11 +58,18 @@ class OffboardMPPI(Node):
         self.dt = float(self.config["dt"])
         self.H = self.mppi.horizon
 
+        self.get_logger().info("🔥 Warming up MPPI controller...")
+        dummy_state = np.zeros(13, dtype=np.float32)
+        dummy_state[6] = 1.0
+        dummy_ref = np.zeros((self.H, 13), dtype=np.float32)
+        dummy_ref[:, 6] = 1.0
+        self.mppi.get_control(dummy_state, dummy_ref)
+        self.get_logger().info("✅ MPPI Warmup completed.")
+
         self.get_logger().info("✅ Offboard MPPI node READY (PX4 compliant)")
 
         # ================= Mission =================
         self.mission = SerpentineMission()
-        #self.mission = LemniscateMission()
         self.t_start = self.get_clock().now().nanoseconds * 1e-9  # mission clock
 
         # ================= State =================
@@ -89,12 +96,20 @@ class OffboardMPPI(Node):
         self.log_file = open(self.log_path, "w")
 
         # header
-        self.log_file.write("time,  thrust_N,   thrust_norm,    p,  q,  r | x, y, z\n")
+        self.log_file.write(
+            "time   comp_time_s     min_cost|   "
+            "thrust_N   p_cmd   q_cmd   r_cmd|  "
+            "x_enu   y_enu   z_enu| "
+            "ref_x   ref_y   ref_z|   "
+            "vx_enu  vy_enu  vz_enu|    "
+            "ref_vx  ref_vy ref_vz\n"
+        )
         self.log_file.flush()
 
         self.log_counter = 0
         self.get_logger().info(f"📁 Logging MPPI data to {self.log_path}")
 
+        
 
     # ================= Callbacks =================
     def vehicle_status_callback(self, msg):
@@ -159,14 +174,18 @@ class OffboardMPPI(Node):
         self.state_ned[3:6] = msg.velocity
         self.state_ned[6:10] = msg.q
         self.state_ned[10:13] = msg.angular_velocity
+
+        # Convert NED to ENU
+        self.state_enu = Ned2EnuConverter.ned_to_enu(self.state_ned)
+
     
     # ================= Publish =================
     def publish_rates(self, thrust_cmd, p, q, r):
         msg = VehicleRatesSetpoint()
         msg.timestamp = self.get_clock().now().nanoseconds // 1000  # microseconds
         msg.roll = p
-        msg.pitch = q
-        msg.yaw = r
+        msg.pitch = -q
+        msg.yaw = -r
         msg.thrust_body[:] = [0.0, 0.0, -thrust_cmd]
         self.rate_pub.publish(msg)
 
@@ -180,20 +199,16 @@ class OffboardMPPI(Node):
 
         if not self.offboard_ready:
             self.publish_offboard_control_mode()
-            self.publish_rates(self.hover_thrust_norm, 0.0, 0.0, 0.0)
+            self.publish_rates(0.0, 0.0, 0.0, 0.0)
             self.arm()
             
             if self.offboard_setpoint_counter == int(1/self.dt):
                 self.set_offboard_mode()
                 self.offboard_ready = True
+                self.t_start = self.get_clock().now().nanoseconds * 1e-9
 
             self.offboard_setpoint_counter += 1
             return
-        
-
-
-
-
 
         # -------- Current mission time --------
         t_now = self.get_clock().now().nanoseconds * 1e-9 - self.t_start
@@ -205,32 +220,53 @@ class OffboardMPPI(Node):
             ref_enu[k] = self.mission.get_reference(t_k)
 
         # -------- Convert ENU -> NED --------
-        ref_ned = np.array([Enu2NedConverter.enu_to_ned(x) for x in ref_enu])
+        # ref_ned = np.array([Enu2NedConverter.enu_to_ned(x) for x in ref_enu])
 
         # -------- MPPI control --------
-        u, _, _ = self.mppi.get_control(self.state_ned, ref_ned)
+        #u, _, _ = self.mppi.get_control(self.state_ned, ref_ned)
+        try:
+            u, comp_time, min_cost = self.mppi.get_control(self.state_enu, ref_enu)
+        except ValueError:
+            ret = self.mppi.get_control(self.state_enu, ref_enu)
+            u = ret[0]
+            comp_time = 0.0
+            min_cost = 0.0
+        #u, _, _ = self.mppi.get_control(self.state_enu, ref_enu)
         thrust, p, q, r = u
+        
         
         # -------- Saturation --------
         thrust_cmd = np.clip(thrust/self.max_thrust, 0.0, 1.0)
         rates = np.clip([p, q, r], self.rate_min, self.rate_max)
 
-        # -------- Log data --------
-        t_log = self.get_clock().now().nanoseconds * 1e-9
-        x, y, z = self.state_ned[0:3]  # estrai posizioni
-        self.log_file.write(
-            f"{t_log:.6f}   {thrust:.3f}    {thrust_cmd:.3f}    "
-            f"{rates[0]:.3f}    {rates[1]:.3f}    {rates[2]:.3f} | "
-            f"{x:.3f}    {y:.3f}    {z:.3f}\n"
-        )
+        # -------- Publish rates --------
+        self.publish_rates(thrust_cmd, rates[0], rates[1], rates[2])
 
-        # flush ogni 20 campioni (~0.4 s)
+        # -------- Log data --------
+        if self.log_file: # Safety check
+            t_log = self.get_clock().now().nanoseconds * 1e-9
+            
+            x, y, z = self.state_enu[0:3]
+            vx, vy, vz = self.state_enu[3:6]
+            
+            ref_x, ref_y, ref_z = ref_enu[0, 0:3]
+            ref_vx, ref_vy, ref_vz = ref_enu[0, 3:6]
+
+            self.log_file.write(
+                f"{t_log:.4f}    {comp_time:.4f}     {min_cost:.4f}|  "
+                f"{thrust:.3f}   {rates[0]:.3f}   {rates[1]:.3f}     {rates[2]:.3f}|  "
+                f"{x:.3f}    {y:.3f}    {z:.3f}|     "
+                f"{ref_x:.3f}    {ref_y:.3f}    {ref_z:.3f}|  "
+                f"{vx:.3f}    {vy:.3f}    {vz:.3f}|   "
+                f"{ref_vx:.3f}    {ref_vy:.3f}    {ref_vz:.3f}\n"
+            )
+
+        # flush every 20 lines
         self.log_counter += 1
         if self.log_counter % 20 == 0:
             self.log_file.flush()
 
-        # -------- Publish rates --------
-        self.publish_rates(thrust_cmd, rates[0], rates[1], rates[2])
+        
 
 
 

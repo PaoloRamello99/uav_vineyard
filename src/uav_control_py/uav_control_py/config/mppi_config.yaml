@@ -4,7 +4,7 @@
 dt: 0.02 # Time step (s)
 n_samples: 1000 # Number of MPPI samples
 horizon: 40 # Planning horizon steps
-temperature: 3.0e-4 # MPPI temperature parameter
+temperature: 3.0e-2 # MPPI temperature parameter
 
 # Physics Parameters
 mass: 2.0 # UAV mass (kg)

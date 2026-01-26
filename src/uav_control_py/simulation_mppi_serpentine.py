@@ -76,9 +76,21 @@ def generate_mission_reference(
     # 1) TAKEOFF
     # =========================
     if t < t1:
-        z = home[2] + altitude * (t / T_takeoff)
+        #z = home[2] + altitude * (t / T_takeoff)
+        
+        # Variabile temporale normalizzata (da 0.0 a 1.0)
+        tau = t / T_takeoff
+        
+        # Profilo Cubico (Smoothstep): 3x^2 - 2x^3
+        # Garantisce velocità 0 a inizio e fine salita
+        poly_pos = 3 * tau**2 - 2 * tau**3
+        poly_vel = 6 * tau - 6 * tau**2  # Derivata del polinomio
+        
+        # Calcolo Z e Vz
+        z = home[2] + altitude * poly_pos
+        vz = (altitude * poly_vel) / T_takeoff
         return np.array([home[0], home[1], z,
-                         0.0, 0.0, altitude / T_takeoff,
+                         0.0, 0.0, vz,
                          1, 0, 0, 0, 0, 0, 0], dtype=np.float32)
 
     # =========================
@@ -194,15 +206,25 @@ def generate_mission_reference(
     # 5) LANDING (discesa verticale su HOME)
     # =========================
     elif t < t5:
+        #tau = (t - t4) / T_landing
+        #tau = np.clip(tau, 0.0, 1.0)
+        #z = altitude * (1 - tau)
 
+        # Tempo normalizzato (0 -> inizio discesa, 1 -> a terra)
         tau = (t - t4) / T_landing
         tau = np.clip(tau, 0.0, 1.0)
-
-        z = altitude * (1 - tau)
+        # Polinomio cubico (3x^2 - 2x^3) per transizione morbida
+        poly_pos = 3 * tau**2 - 2 * tau**3
+        poly_vel = 6 * tau - 6 * tau**2
+        # Discesa da 'altitude' a 0
+        z = altitude * (1 - poly_pos)
+        # Velocità negativa (verso il basso)
+        # Derivata di (1-poly): -poly_vel
+        vz = -altitude * poly_vel / T_landing
 
         return np.array([
             home[0], home[1], z,
-            0.0, 0.0, -altitude / T_landing,
+            0.0, 0.0, vz,
             1, 0, 0, 0, 0, 0, 0
         ], dtype=np.float32)
 
@@ -249,7 +271,7 @@ def run_simulation():
 
     # Initial Condition
     current_state = np.array(
-        [-1.0, -1.0, 0.5, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
         dtype=np.float32,
     )
 
