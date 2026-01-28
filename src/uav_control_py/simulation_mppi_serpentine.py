@@ -43,124 +43,116 @@ def generate_mission_reference(
     row_spacing=2.5,
     num_rows=10,
     v_ref=2.0,
-    T_takeoff=3.0,
-    T_landing=3.0,
+    T_takeoff=4.0,  # Aumentato leggermente per fluidità
+    T_landing=4.0,
 ):
-    """
-    Missione UAV con serpentina:
-    - 1 filare = tratto rettilineo + 1 turn
-    - direzione determinata dalla parità del filare
-    """
+    # --- HELPER: Polinomio Quintico (Minimum Jerk) ---
+    # Restituisce (posizione_norm, velocità_norm) per tau in [0, 1]
+    # Posizione va da 0 a 1. Velocità e Accel sono 0 agli estremi.
+    def quintic_step(tau):
+        tau = np.clip(tau, 0.0, 1.0)
+        # Posizione: 10t^3 - 15t^4 + 6t^5
+        p = 10 * tau**3 - 15 * tau**4 + 6 * tau**5
+        # Velocità (derivata): 30t^2 - 60t^3 + 30t^4
+        v = 30 * tau**2 - 60 * tau**3 + 30 * tau**4
+        return p, v
 
     # =========================
     # PRE-COMPUTAZIONI
     # =========================
     R = row_spacing / 2.0
-
+    dist_to_vineyard = np.linalg.norm(first_row - home[:2])
+    
+    # Tempi Serpentina
     T_row = row_length / v_ref
     T_turn = np.pi * R / v_ref
     T_cycle = T_row + T_turn
-
     T_serpentine = num_rows * T_cycle
 
-    T_to_vineyard = np.linalg.norm(first_row - home[:2]) / v_ref
-    T_return = T_to_vineyard
+    # --- Calcolo Tempi Transito Quintico ---
+    # Per mantenere la v_max circa uguale a v_ref con una curva quintica,
+    # il tempo necessario è T = (15/8) * Dist / v_ref  => approx 1.875 * Dist/v_ref
+    # Arrotondiamo a 2.0 per margine.
+    T_to_vineyard = 2.0 * dist_to_vineyard / v_ref
+    T_return = 2.0 * dist_to_vineyard / v_ref
+    
+    # Tempo di Assestamento (CRUCIALE per evitare il crash finale)
+    T_settle = 3.0 
 
+    # Timeline
     t1 = T_takeoff
     t2 = t1 + T_to_vineyard
     t3 = t2 + T_serpentine
     t4 = t3 + T_return
-    t5 = t4 + T_landing
+    t5 = t4 + T_settle
+    t6 = t5 + T_landing
 
     # =========================
-    # 1) TAKEOFF
+    # 1) TAKEOFF (Quintico)
     # =========================
     if t < t1:
-        #z = home[2] + altitude * (t / T_takeoff)
-        
-        # Variabile temporale normalizzata (da 0.0 a 1.0)
         tau = t / T_takeoff
+        norm_pos, norm_vel = quintic_step(tau)
         
-        # Profilo Cubico (Smoothstep): 3x^2 - 2x^3
-        # Garantisce velocità 0 a inizio e fine salita
-        poly_pos = 3 * tau**2 - 2 * tau**3
-        poly_vel = 6 * tau - 6 * tau**2  # Derivata del polinomio
+        z = home[2] + altitude * norm_pos
+        vz = (altitude * norm_vel) / T_takeoff
         
-        # Calcolo Z e Vz
-        z = home[2] + altitude * poly_pos
-        vz = (altitude * poly_vel) / T_takeoff
         return np.array([home[0], home[1], z,
                          0.0, 0.0, vz,
                          1, 0, 0, 0, 0, 0, 0], dtype=np.float32)
 
     # =========================
-    # 2) TRANSITO AL VIGNETO
+    # 2) TRANSITO ANDATA (Quintico)
     # =========================
     elif t < t2:
         tau = (t - t1) / T_to_vineyard
-        pos = home[:2] + tau * (first_row - home[:2])
-        vel = v_ref * (first_row - home[:2]) / np.linalg.norm(first_row - home[:2])
+        norm_pos, norm_vel = quintic_step(tau)
+        
+        dir_vec = first_row - home[:2]
+        
+        pos = home[:2] + norm_pos * dir_vec
+        # Velocità vettoriale = (Dir * norm_vel) / T_totale
+        vel = (dir_vec * norm_vel) / T_to_vineyard
 
         return np.array([pos[0], pos[1], altitude,
                          vel[0], vel[1], 0.0,
                          1, 0, 0, 0, 0, 0, 0], dtype=np.float32)
 
     # =========================
-    # 3) SERPENTINA
+    # 3) SERPENTINA (Invariata)
     # =========================
     elif t < t3:
         ts = t - t2
-
         row_idx = int(ts // T_cycle)
         row_idx = min(row_idx, num_rows - 1)
-
         tau = ts - row_idx * T_cycle
-
         y_row = first_row[1] + row_idx * row_spacing
         direction = 1 if row_idx % 2 == 0 else -1
 
-        # ---- RETTILINEO ----
         if tau < T_row:
             s = v_ref * tau
-
             if direction == 1:
                 x = first_row[0] + s
                 vx = v_ref
             else:
                 x = first_row[0] + row_length - s
                 vx = -v_ref
-
             y = y_row
             vy = 0.0
-
-        # ---- TURN (verso filare successivo) ----
         else:
             if row_idx == num_rows - 1:
-                # ultimo filare
                 s = row_length
-                if direction == 1:
-                    x = first_row[0] + s
-                    vx = v_ref
-                else:
-                    x = first_row[0]
-                    vx = -v_ref
-
+                vx = v_ref if direction == 1 else -v_ref
+                x = first_row[0] + s if direction == 1 else first_row[0]
                 y = y_row
                 vy = 0.0
             else:
                 t_turn = tau - T_row
                 theta = np.pi * t_turn / T_turn
-
-                if direction == 1:
-                    x_c = first_row[0] + row_length
-                else:
-                    x_c = first_row[0]
-
+                x_c = first_row[0] + row_length if direction == 1 else first_row[0]
                 y_c = y_row + R
-
                 x = x_c + direction * R * np.sin(theta)
                 y = y_c - R * np.cos(theta)
-
                 vx = direction * v_ref * np.cos(theta)
                 vy = v_ref * np.sin(theta)
 
@@ -169,31 +161,22 @@ def generate_mission_reference(
                          1, 0, 0, 0, 0, 0, 0], dtype=np.float32)
 
     # =========================
-    # 4) RITORNO A HOME
+    # 4) RITORNO (Quintico)
     # =========================
     elif t < t4:
-
         tau = (t - t3) / T_return
-        tau = np.clip(tau, 0.0, 1.0)
+        norm_pos, norm_vel = quintic_step(tau)
 
-        # ultima posizione serpentina
         last_row = num_rows - 1
         last_y = first_row[1] + last_row * row_spacing
         direction = 1 if last_row % 2 == 0 else -1
-
-        if direction == 1:
-            last_x = first_row[0] + row_length
-        else:
-            last_x = first_row[0]
-
+        last_x = first_row[0] + row_length if direction == 1 else first_row[0]
         start = np.array([last_x, last_y])
-        end   = home[:2]
-
-        pos = start + tau * (end - start)
+        end = home[:2]
         dir_vec = end - start
-        dir_vec /= np.linalg.norm(dir_vec)
 
-        vel = v_ref * dir_vec
+        pos = start + norm_pos * dir_vec
+        vel = (dir_vec * norm_vel) / T_return
 
         return np.array([
             pos[0], pos[1], altitude,
@@ -201,26 +184,27 @@ def generate_mission_reference(
             1, 0, 0, 0, 0, 0, 0
         ], dtype=np.float32)
 
-
     # =========================
-    # 5) LANDING (discesa verticale su HOME)
+    # 5) SETTLE
     # =========================
     elif t < t5:
-        #tau = (t - t4) / T_landing
-        #tau = np.clip(tau, 0.0, 1.0)
-        #z = altitude * (1 - tau)
+        # Hovering statico per smorzare oscillazioni
+        return np.array([
+            home[0], home[1], altitude,
+            0.0, 0.0, 0.0,
+            1, 0, 0, 0, 0, 0, 0
+        ], dtype=np.float32)
 
-        # Tempo normalizzato (0 -> inizio discesa, 1 -> a terra)
-        tau = (t - t4) / T_landing
-        tau = np.clip(tau, 0.0, 1.0)
-        # Polinomio cubico (3x^2 - 2x^3) per transizione morbida
-        poly_pos = 3 * tau**2 - 2 * tau**3
-        poly_vel = 6 * tau - 6 * tau**2
-        # Discesa da 'altitude' a 0
-        z = altitude * (1 - poly_pos)
-        # Velocità negativa (verso il basso)
-        # Derivata di (1-poly): -poly_vel
-        vz = -altitude * poly_vel / T_landing
+    # =========================
+    # 6) LANDING (Quintico)
+    # =========================
+    elif t < t6:
+        tau = (t - t5) / T_landing
+        # Nota: per atterrare invertiamo la posizione (1 -> 0)
+        norm_pos, norm_vel = quintic_step(tau)
+        
+        z = altitude * (1 - norm_pos)
+        vz = - (altitude * norm_vel) / T_landing
 
         return np.array([
             home[0], home[1], z,
@@ -229,13 +213,14 @@ def generate_mission_reference(
         ], dtype=np.float32)
 
     # =========================
-    # FINE MISSIONE
+    # FINE
     # =========================
     else:
-        return np.array([home[0], home[1], home[2],
-                        0.0, 0.0, 0.0,
-                        1, 0, 0, 0, 0, 0, 0], dtype=np.float32)
+        return np.array([home[0], home[1], 0.0,
+                         0.0, 0.0, 0.0,
+                         1, 0, 0, 0, 0, 0, 0], dtype=np.float32)
     
+
 
 def run_simulation():
     # 1. Setup

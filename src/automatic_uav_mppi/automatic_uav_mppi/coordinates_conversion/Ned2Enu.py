@@ -34,12 +34,16 @@ class Ned2EnuConverter:
         # Trasformazione analitica inversa:
         # Ruota il frame e corregge l'offset di Yaw di -90 gradi
         qw, qx, qy, qz = x_ned[6:10]
-        c = 0.70710678118  # 1 / sqrt(2)
-
-        x_enu[6] = c * (qw - qz)      # w
-        x_enu[7] = -c * (qx + qy)     # x
-        x_enu[8] = c * (qx - qy)      # y
-        x_enu[9] = c * (qw + qz)      # z
+        x_enu[6] = qw
+        x_enu[7] = qy
+        x_enu[8] = qx
+        x_enu[9] = -qz
+        
+        #c = 0.70710678118  # 1 / sqrt(2)
+        #x_enu[6] = c * (qw - qz)      # w
+        #x_enu[7] = -c * (qx + qy)     # x
+        #x_enu[8] = c * (qx - qy)      # y
+        #x_enu[9] = c * (qw + qz)      # z
         
         # Normalizzazione segno w (convenzione per evitare salti)
         if x_enu[6] < 0:

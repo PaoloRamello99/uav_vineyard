@@ -213,6 +213,15 @@ class OffboardMPPI(Node):
         # -------- Current mission time --------
         t_now = self.get_clock().now().nanoseconds * 1e-9 - self.t_start
 
+
+        # --- TEST BYPASS MPPI ---
+        # 75% riesce a decollare
+        #thrust_cmd = 19.62/self.max_thrust  # 75% thrust 
+        #self.publish_rates(thrust_cmd, 0.0, 0.0, 0.0)
+        #self.get_logger().info(f"TEST BYPASS: Thrust Cmd {thrust_cmd}")
+        
+
+
         # -------- Reference trajectory --------
         ref_enu = np.zeros((self.H, 13), dtype=np.float32)
         for k in range(self.H):
@@ -231,7 +240,7 @@ class OffboardMPPI(Node):
             u = ret[0]
             comp_time = 0.0
             min_cost = 0.0
-        #u, _, _ = self.mppi.get_control(self.state_enu, ref_enu)
+        u, _, _ = self.mppi.get_control(self.state_enu, ref_enu)
         thrust, p, q, r = u
         
         
