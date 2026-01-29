@@ -1,0 +1,29 @@
+
+# LSP
+basedpyright
+
+# Tests
+pytest
+
+# Control & Math
+numpy>=1.26.4
+scipy>=1.15.2
+matplotlib
+seaborn
+
+# JAX
+jax[cuda13]
+qdax
+chex
+optax
+lqrax
+evosax
+
+# Configuration
+pyyaml
+
+# ROS 2 / Tools
+setuptools==79.0.1
+catkin_pkg
+lark
+empy==3.3.4

@@ -4,53 +4,76 @@
 ############################################################################
 
 import os
-import rclpy
+
 import numpy as np
-
+import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy, QoSHistoryPolicy
-
-from px4_msgs.msg import (
-    OffboardControlMode,
-    VehicleRatesSetpoint,
-    VehicleOdometry,
-    VehicleStatus,
-    VehicleCommand
+from rclpy.qos import (
+    QoSDurabilityPolicy,
+    QoSHistoryPolicy,
+    QoSProfile,
+    QoSReliabilityPolicy,
 )
 
-from uav_control_py.config.config_loader import load_mppi_config
-from uav_control_py.controller.mppi.mppi_rate import MPPIRateController
-from uav_control_py.mission.mission_reference import SerpentineMission
-#from automatic_uav_mppi.coordinates_conversion.Enu2Ned import Enu2NedConverter
+from automatic_uav_mppi.config.config_loader import load_mppi_config
+from automatic_uav_mppi.controller.mppi.mppi_rate import MPPIRateController
+
+# from automatic_uav_mppi.coordinates_conversion.Enu2Ned import Enu2NedConverter
 from automatic_uav_mppi.coordinates_conversion.Ned2Enu import Ned2EnuConverter
+from automatic_uav_mppi.mission.mission_reference import SerpentineMission
+from px4_msgs.msg import (
+    OffboardControlMode,
+    VehicleCommand,
+    VehicleOdometry,
+    VehicleRatesSetpoint,
+    VehicleStatus,
+)
+
 
 class OffboardMPPI(Node):
-
     def __init__(self):
-        super().__init__(
-            "offboard_mppi"
-        )
+        super().__init__("offboard_mppi")
         # ================= QoS =================
-        qos_pub = QoSProfile(reliability=QoSReliabilityPolicy.BEST_EFFORT,
-                             durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
-                             history=QoSHistoryPolicy.KEEP_LAST, 
-                             depth=1
-                             )
-        qos_sub = QoSProfile(reliability=QoSReliabilityPolicy.BEST_EFFORT,
-                             durability=QoSDurabilityPolicy.VOLATILE,
-                             history=QoSHistoryPolicy.KEEP_LAST, 
-                             depth=1
-                             )
+        qos_pub = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
+        qos_sub = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            durability=QoSDurabilityPolicy.VOLATILE,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
 
         # ================= Subscribers =================
-        self.create_subscription(VehicleOdometry, "/fmu/out/vehicle_odometry", self.odometry_cb, qos_sub)
-        self.status_sub = self.create_subscription(VehicleStatus, 'fmu/out/vehicle_status', self.vehicle_status_callback, qos_sub)
-        self.status_sub_v1 = self.create_subscription(VehicleStatus, 'fmu/out/vehicle_status_v1', self.vehicle_status_callback, qos_sub)
-        
+        self.create_subscription(
+            VehicleOdometry, "/fmu/out/vehicle_odometry", self.odometry_cb, qos_sub
+        )
+        self.status_sub = self.create_subscription(
+            VehicleStatus,
+            "fmu/out/vehicle_status",
+            self.vehicle_status_callback,
+            qos_sub,
+        )
+        self.status_sub_v1 = self.create_subscription(
+            VehicleStatus,
+            "fmu/out/vehicle_status_v1",
+            self.vehicle_status_callback,
+            qos_sub,
+        )
+
         # ================= Publishers =================
-        self.offboard_pub = self.create_publisher(OffboardControlMode, "/fmu/in/offboard_control_mode", qos_pub)
-        self.rate_pub = self.create_publisher(VehicleRatesSetpoint, "/fmu/in/vehicle_rates_setpoint", qos_pub)
-        self.cmd_pub = self.create_publisher(VehicleCommand, "/fmu/in/vehicle_command", qos_pub)
+        self.offboard_pub = self.create_publisher(
+            OffboardControlMode, "/fmu/in/offboard_control_mode", qos_pub
+        )
+        self.rate_pub = self.create_publisher(
+            VehicleRatesSetpoint, "/fmu/in/vehicle_rates_setpoint", qos_pub
+        )
+        self.cmd_pub = self.create_publisher(
+            VehicleCommand, "/fmu/in/vehicle_command", qos_pub
+        )
 
         # ================= MPPI =================
         self.config = load_mppi_config()
@@ -75,10 +98,12 @@ class OffboardMPPI(Node):
         # ================= State =================
         self.state_ned = np.zeros(13, dtype=np.float32)
         self.state_ned[6] = 1.0
-        
+
         # Initialize variables
         self.offboard_setpoint_counter = 0
-        self.hover_thrust_norm = (self.config["mass"] * self.config["g"]) / self.config["max_thrust"]
+        self.hover_thrust_norm = (self.config["mass"] * self.config["g"]) / self.config[
+            "max_thrust"
+        ]
         self.offboard_ready = False
         self.timer = self.create_timer(self.dt, self.control_loop)
 
@@ -86,7 +111,6 @@ class OffboardMPPI(Node):
         self.max_thrust = self.config["max_thrust"]
         self.rate_min = np.array(self.config["angular_rate_min"])
         self.rate_max = np.array(self.config["angular_rate_max"])
-
 
         # ================= Logging =================
         log_dir = "/workspaces/uav_vineyard/src/automatic_uav_mppi/files"
@@ -109,8 +133,6 @@ class OffboardMPPI(Node):
         self.log_counter = 0
         self.get_logger().info(f"📁 Logging MPPI data to {self.log_path}")
 
-        
-
     # ================= Callbacks =================
     def vehicle_status_callback(self, msg):
         """Callback function for vehicle_status topic subscriber."""
@@ -124,16 +146,16 @@ class OffboardMPPI(Node):
         msg.velocity = False
         msg.acceleration = False
         msg.attitude = False
-        msg.body_rate = True          
+        msg.body_rate = True
         msg.thrust_and_torque = False
         msg.direct_actuator = False
         self.offboard_pub.publish(msg)
-    
+
     def arm(self):
         cmd = VehicleCommand()
         cmd.timestamp = self.get_clock().now().nanoseconds // 1000
         cmd.command = VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM
-        cmd.param1 = 1.0   # arm
+        cmd.param1 = 1.0  # arm
         cmd.param2 = 0.0
         cmd.param3 = 0.0
         cmd.param4 = 0.0
@@ -146,13 +168,13 @@ class OffboardMPPI(Node):
         cmd.source_component = 1
         cmd.from_external = True
         self.cmd_pub.publish(cmd)
-    
+
     def set_offboard_mode(self):
         cmd = VehicleCommand()
         cmd.timestamp = self.get_clock().now().nanoseconds // 1000
         cmd.command = VehicleCommand.VEHICLE_CMD_DO_SET_MODE
-        cmd.param1 = 1.0    # PX4 custom mode
-        cmd.param2 = 6.0    # OFFBOARD
+        cmd.param1 = 1.0  # PX4 custom mode
+        cmd.param2 = 6.0  # OFFBOARD
         cmd.param3 = 0.0
         cmd.param4 = 0.0
         cmd.param5 = 0.0
@@ -165,10 +187,6 @@ class OffboardMPPI(Node):
         cmd.from_external = True
         self.cmd_pub.publish(cmd)
 
-
-
-
-
     def odometry_cb(self, msg):
         self.state_ned[0:3] = msg.position
         self.state_ned[3:6] = msg.velocity
@@ -178,7 +196,6 @@ class OffboardMPPI(Node):
         # Convert NED to ENU
         self.state_enu = Ned2EnuConverter.ned_to_enu(self.state_ned)
 
-    
     # ================= Publish =================
     def publish_rates(self, thrust_cmd, p, q, r):
         msg = VehicleRatesSetpoint()
@@ -189,10 +206,6 @@ class OffboardMPPI(Node):
         msg.thrust_body[:] = [0.0, 0.0, -thrust_cmd]
         self.rate_pub.publish(msg)
 
-
-
-
-
     # ================= Main Loop =================
     def control_loop(self):
         self.publish_offboard_control_mode()
@@ -201,8 +214,8 @@ class OffboardMPPI(Node):
             self.publish_offboard_control_mode()
             self.publish_rates(0.0, 0.0, 0.0, 0.0)
             self.arm()
-            
-            if self.offboard_setpoint_counter == int(1/self.dt):
+
+            if self.offboard_setpoint_counter == int(1 / self.dt):
                 self.set_offboard_mode()
                 self.offboard_ready = True
                 self.t_start = self.get_clock().now().nanoseconds * 1e-9
@@ -213,14 +226,11 @@ class OffboardMPPI(Node):
         # -------- Current mission time --------
         t_now = self.get_clock().now().nanoseconds * 1e-9 - self.t_start
 
-
         # --- TEST BYPASS MPPI ---
         # 75% riesce a decollare
-        #thrust_cmd = 19.62/self.max_thrust  # 75% thrust 
-        #self.publish_rates(thrust_cmd, 0.0, 0.0, 0.0)
-        #self.get_logger().info(f"TEST BYPASS: Thrust Cmd {thrust_cmd}")
-        
-
+        # thrust_cmd = 19.62/self.max_thrust  # 75% thrust
+        # self.publish_rates(thrust_cmd, 0.0, 0.0, 0.0)
+        # self.get_logger().info(f"TEST BYPASS: Thrust Cmd {thrust_cmd}")
 
         # -------- Reference trajectory --------
         ref_enu = np.zeros((self.H, 13), dtype=np.float32)
@@ -232,7 +242,7 @@ class OffboardMPPI(Node):
         # ref_ned = np.array([Enu2NedConverter.enu_to_ned(x) for x in ref_enu])
 
         # -------- MPPI control --------
-        #u, _, _ = self.mppi.get_control(self.state_ned, ref_ned)
+        # u, _, _ = self.mppi.get_control(self.state_ned, ref_ned)
         try:
             u, comp_time, min_cost = self.mppi.get_control(self.state_enu, ref_enu)
         except ValueError:
@@ -242,22 +252,21 @@ class OffboardMPPI(Node):
             min_cost = 0.0
         u, _, _ = self.mppi.get_control(self.state_enu, ref_enu)
         thrust, p, q, r = u
-        
-        
+
         # -------- Saturation --------
-        thrust_cmd = np.clip(thrust/self.max_thrust, 0.0, 1.0)
+        thrust_cmd = np.clip(thrust / self.max_thrust, 0.0, 1.0)
         rates = np.clip([p, q, r], self.rate_min, self.rate_max)
 
         # -------- Publish rates --------
         self.publish_rates(thrust_cmd, rates[0], rates[1], rates[2])
 
         # -------- Log data --------
-        if self.log_file: # Safety check
+        if self.log_file:  # Safety check
             t_log = self.get_clock().now().nanoseconds * 1e-9
-            
+
             x, y, z = self.state_enu[0:3]
             vx, vy, vz = self.state_enu[3:6]
-            
+
             ref_x, ref_y, ref_z = ref_enu[0, 0:3]
             ref_vx, ref_vy, ref_vz = ref_enu[0, 3:6]
 
@@ -275,12 +284,6 @@ class OffboardMPPI(Node):
         if self.log_counter % 20 == 0:
             self.log_file.flush()
 
-        
-
-
-
-    
-
 
 # ================= Main =================
 def main(args=None):
@@ -292,5 +295,5 @@ def main(args=None):
     rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

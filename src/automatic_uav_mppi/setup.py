@@ -32,6 +32,8 @@ setup(
     entry_points={
         'console_scripts': [
             'offboard_mppi = automatic_uav_mppi.offboard_mppi:main',
+            'mppi_rate_node = automatic_uav_mppi.mppi_rate_node:main',
+            'reference_node = automatic_uav_mppi.reference_node:main',
             'Enu2Ned = automatic_uav_mppi.coordinates_conversion.Enu2Ned:main',
             'Ned2Enu = automatic_uav_mppi.coordinates_conversion.Ned2Enu:main',
         ],
