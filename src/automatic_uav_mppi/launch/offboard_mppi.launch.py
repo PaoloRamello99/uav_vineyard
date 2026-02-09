@@ -13,11 +13,11 @@ def generate_launch_description():
         description='Path to the PX4 Firmware root directory'
     )
 
-    world_arg = DeclareLaunchArgument(
-        'world',
-        default_value='vineyard_world',
-        description='Gazebo world to load'
-    )
+    #world_arg = DeclareLaunchArgument(
+    #    'world',
+    #    default_value='vineyard_world',
+    #    description='Gazebo world to load'
+    #)
 
     # --- 2. INFRASTRUCTURE NODES ---
     ros_gz_bridge = Node(
@@ -38,7 +38,7 @@ def generate_launch_description():
         cmd=['make', 'px4_sitl', 'gz_x500'],
         cwd=LaunchConfiguration('px4_dir'),
         output='screen',
-        additional_env={'PX4_GZ_WORLD': LaunchConfiguration('world')},
+        #additional_env={'PX4_GZ_WORLD': LaunchConfiguration('world')},
         name='px4_sitl'
     )
 
@@ -52,6 +52,47 @@ def generate_launch_description():
         parameters=[{'use_sim_time': True}]
     )
 
+    serpentine_trajectory = Node(
+        package="automatic_uav_mppi",
+        executable="serpentine_trajectory",
+        name="serpentine_trajectory",
+        output="screen",
+        emulate_tty=True,
+        parameters=[{"use_sim_time": True}],
+    )
+
+    #reference_node = Node(
+    #    package="automatic_uav_mppi",
+    #    executable="reference_node",
+    #    name="reference_node",
+    #    output="screen",
+    #    emulate_tty=True,
+    #    parameters=[{"use_sim_time": True}],
+    #)
+
+    #mppi_rate_node = Node(
+    #    package="automatic_uav_mppi",
+    #    executable="mppi_rate_node",
+    #    name="mppi_rate_node",
+    #    output="screen",
+    #    emulate_tty=True,
+    #    parameters=[{"use_sim_time": True}],
+    #    remappings=[
+    #        ("fmu/out/vehicle_status", "fmu/out/vehicle_status_v1"),
+    #        ("fmu/out/vehicle_local_position", "fmu/out/vehicle_local_position_v1"),
+    #    ],
+    #)
+
+    #lemniscate_node = Node(
+    #    package="automatic_uav_mppi",
+    #    executable="lemniscate_node",
+    #    name="lemniscate_node",
+    #    output="screen",
+    #    emulate_tty=True,
+    #    parameters=[{"use_sim_time": True}],
+    #)
+
+
     # --- 4. CONTROL FUNCTION ---
     def on_px4_log_check(event):
         """
@@ -60,7 +101,11 @@ def generate_launch_description():
         if 'Ready for takeoff!' in event.text.decode():
             return [
                 LogInfo(msg="Starting MPPI node..."),
-                offboard_mppi_node  
+                offboard_mppi_node,
+                #mppi_rate_node,
+                serpentine_trajectory  
+                #lemniscate_node
+                #reference_node
             ]
         return None
 
@@ -74,7 +119,7 @@ def generate_launch_description():
     return LaunchDescription([
         LogInfo(msg="🚀 Initializing environment..."),
         px4_dir_arg,
-        world_arg,
+        #world_arg,
         ros_gz_bridge,
         micro_xrce_agent,
         px4_sitl,

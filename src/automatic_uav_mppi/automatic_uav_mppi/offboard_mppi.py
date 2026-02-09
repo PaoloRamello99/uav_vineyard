@@ -1,62 +1,107 @@
 #!/usr/bin/env python3
 ############################################################################
-# Offboard MPPI Rate Control - PX4
+# Offboard MPPI Rate Control - PX4 (Subscriber Version)
+# Cleaned & Optimized
 ############################################################################
 
-import os
-import rclpy
 import numpy as np
-
+import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy, QoSHistoryPolicy
 
-from px4_msgs.msg import (
-    OffboardControlMode,
-    VehicleRatesSetpoint,
-    VehicleOdometry,
-    VehicleStatus,
-    VehicleCommand
-)
-
-from uav_control_py.config.config_loader import load_mppi_config
+# Controller MPPI
 from uav_control_py.controller.mppi.mppi_rate import MPPIRateController
-from uav_control_py.mission.mission_reference import SerpentineMission
-#from automatic_uav_mppi.coordinates_conversion.Enu2Ned import Enu2NedConverter
+from uav_control_py.config.config_loader import load_mppi_config
+
+# Coordinate Conversion
 from automatic_uav_mppi.coordinates_conversion.Ned2Enu import Ned2EnuConverter
 
-class OffboardMPPI(Node):
+# ROS 2 messages
+from px4_msgs.msg import (
+    OffboardControlMode,
+    VehicleCommand,
+    VehicleOdometry,
+    VehicleRatesSetpoint,
+    VehicleStatus,
+)
+from quadrotor_msgs.msg import StateReference
 
+class OffboardMPPI(Node):
     def __init__(self):
-        super().__init__(
-            "offboard_mppi"
+        super().__init__("offboard_mppi")
+        
+        # ================= QoS Profiles =================
+        # Best effort is preferred for high-frequency telemetry/control topics
+        qos_pub = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1,
         )
-        # ================= QoS =================
-        qos_pub = QoSProfile(reliability=QoSReliabilityPolicy.BEST_EFFORT,
-                             durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
-                             history=QoSHistoryPolicy.KEEP_LAST, 
-                             depth=1
-                             )
-        qos_sub = QoSProfile(reliability=QoSReliabilityPolicy.BEST_EFFORT,
-                             durability=QoSDurabilityPolicy.VOLATILE,
-                             history=QoSHistoryPolicy.KEEP_LAST, 
-                             depth=1
-                             )
+        qos_sub = QoSProfile(
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
+            durability=QoSDurabilityPolicy.VOLATILE,
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
 
         # ================= Subscribers =================
-        self.create_subscription(VehicleOdometry, "/fmu/out/vehicle_odometry", self.odometry_cb, qos_sub)
-        self.status_sub = self.create_subscription(VehicleStatus, 'fmu/out/vehicle_status', self.vehicle_status_callback, qos_sub)
-        self.status_sub_v1 = self.create_subscription(VehicleStatus, 'fmu/out/vehicle_status_v1', self.vehicle_status_callback, qos_sub)
+        # 1. Odometry (NED frame from PX4)
+        self.create_subscription(
+            VehicleOdometry, "/fmu/out/vehicle_odometry", self.odometry_cb, qos_sub
+        )
         
-        # ================= Publishers =================
-        self.offboard_pub = self.create_publisher(OffboardControlMode, "/fmu/in/offboard_control_mode", qos_pub)
-        self.rate_pub = self.create_publisher(VehicleRatesSetpoint, "/fmu/in/vehicle_rates_setpoint", qos_pub)
-        self.cmd_pub = self.create_publisher(VehicleCommand, "/fmu/in/vehicle_command", qos_pub)
+        # 2. Status (Arming/Mode)
+        self.status_sub = self.create_subscription(
+            VehicleStatus,
+            "/fmu/out/vehicle_status_v1", # Verify if your PX4 version uses _v1
+            self.vehicle_status_callback,
+            qos_sub,
+        )
 
-        # ================= MPPI =================
+        # 3. Reference Trajectory (ENU frame from Serpentine Node)
+        self.ref_sub = self.create_subscription(
+            StateReference, 
+            "/command/state_reference", 
+            self.reference_callback, 
+            10
+        )
+
+        # ================= Publishers =================
+        self.offboard_pub = self.create_publisher(
+            OffboardControlMode, "/fmu/in/offboard_control_mode", qos_pub
+        )
+        self.rate_pub = self.create_publisher(
+            VehicleRatesSetpoint, "/fmu/in/vehicle_rates_setpoint", qos_pub
+        )
+        self.cmd_pub = self.create_publisher(
+            VehicleCommand, "/fmu/in/vehicle_command", qos_pub
+        )
+
+        # ================= MPPI Controller =================
         self.config = load_mppi_config()
         self.mppi = MPPIRateController(self.config)
-        self.dt = float(self.config["dt"])
-        self.H = self.mppi.horizon
+        self.dt = float(self.config["dt"]) 
+        self.H = self.mppi.horizon 
+
+        # ================= Internal State =================
+        self.state_ned = np.zeros(13, dtype=np.float32)
+        self.state_enu = np.zeros(13, dtype=np.float32)
+        self.state_enu[6] = 1.0 # Initialize Quaternion w=1
+        
+        # We start with None to prevent arming before a trajectory exists
+        self.ref_traj_enu = None 
+
+        # Control Limits
+        self.max_thrust = self.config["max_thrust"]
+        self.rate_min = np.array(self.config["angular_rate_min"])
+        self.rate_max = np.array(self.config["angular_rate_max"])
+
+        # Logic Flags
+        self.offboard_setpoint_counter = 0
+        self.offboard_ready = False
+        self.nav_state = VehicleStatus.NAVIGATION_STATE_MAX
+        self.arming_state = VehicleStatus.ARMING_STATE_DISARMED
 
         self.get_logger().info("🔥 Warming up MPPI controller...")
         dummy_state = np.zeros(13, dtype=np.float32)
@@ -66,98 +111,95 @@ class OffboardMPPI(Node):
         self.mppi.get_control(dummy_state, dummy_ref)
         self.get_logger().info("✅ MPPI Warmup completed.")
 
-        self.get_logger().info("✅ Offboard MPPI node READY (PX4 compliant)")
-
-        # ================= Mission =================
-        self.mission = SerpentineMission()
-        self.t_start = self.get_clock().now().nanoseconds * 1e-9  # mission clock
-
-        # ================= State =================
-        self.state_ned = np.zeros(13, dtype=np.float32)
-        self.state_ned[6] = 1.0
-        
-        # Initialize variables
-        self.offboard_setpoint_counter = 0
-        self.hover_thrust_norm = (self.config["mass"] * self.config["g"]) / self.config["max_thrust"]
-        self.offboard_ready = False
+        # Start Loop
         self.timer = self.create_timer(self.dt, self.control_loop)
-
-        # ================= Limits =================
-        self.max_thrust = self.config["max_thrust"]
-        self.rate_min = np.array(self.config["angular_rate_min"])
-        self.rate_max = np.array(self.config["angular_rate_max"])
-
-
-        # ================= Logging =================
-        log_dir = "/workspaces/uav_vineyard/src/automatic_uav_mppi/files"
-        os.makedirs(log_dir, exist_ok=True)
-
-        self.log_path = os.path.join(log_dir, "mppi_control_log.txt")
-        self.log_file = open(self.log_path, "w")
-
-        # header
-        self.log_file.write(
-            "time   comp_time_s     min_cost|   "
-            "thrust_N   p_cmd   q_cmd   r_cmd|  "
-            "x_enu   y_enu   z_enu| "
-            "ref_x   ref_y   ref_z|   "
-            "vx_enu  vy_enu  vz_enu|    "
-            "ref_vx  ref_vy ref_vz\n"
-        )
-        self.log_file.flush()
-
-        self.log_counter = 0
-        self.get_logger().info(f"📁 Logging MPPI data to {self.log_path}")
-
-        
+        self.get_logger().info("✅ Offboard MPPI node READY. Waiting for Trajectory...")
 
     # ================= Callbacks =================
     def vehicle_status_callback(self, msg):
-        """Callback function for vehicle_status topic subscriber."""
         self.nav_state = msg.nav_state
         self.arming_state = msg.arming_state
 
+    def odometry_cb(self, msg):
+        """ Receives Odometry (NED) and converts to ENU for MPPI """
+        self.state_ned[0:3] = msg.position
+        self.state_ned[3:6] = msg.velocity
+        self.state_ned[6:10] = msg.q
+        self.state_ned[10:13] = msg.angular_velocity
+        
+        # Convert NED to ENU
+        self.state_enu = Ned2EnuConverter.ned_to_enu(self.state_ned)
+
+    def reference_callback(self, msg):
+        """
+        Receives the full horizon trajectory (Takeoff, Hold, or Serpentine)
+        and converts it to the numpy format required by MPPI (Jax).
+        """
+        traj = np.zeros((self.H, 13), dtype=np.float32)
+        
+        n_points = len(msg.poses)
+        if n_points == 0:
+            return
+
+        for i in range(self.H):
+            # If the received horizon is shorter than MPPI horizon, repeat the last point
+            k = min(i, n_points - 1)
+
+            # Position
+            traj[i, 0] = msg.poses[k].position.x
+            traj[i, 1] = msg.poses[k].position.y
+            traj[i, 2] = msg.poses[k].position.z
+
+            # Linear Velocity
+            traj[i, 3] = msg.twists[k].linear.x
+            traj[i, 4] = msg.twists[k].linear.y
+            traj[i, 5] = msg.twists[k].linear.z
+
+            # Orientation (Quaternion)
+            traj[i, 6] = msg.poses[k].orientation.w
+            traj[i, 7] = msg.poses[k].orientation.x
+            traj[i, 8] = msg.poses[k].orientation.y
+            traj[i, 9] = msg.poses[k].orientation.z
+
+            # Angular Velocity
+            traj[i, 10] = msg.twists[k].angular.x
+            traj[i, 11] = msg.twists[k].angular.y
+            traj[i, 12] = msg.twists[k].angular.z
+
+        self.ref_traj_enu = traj
+
+    # ================= PX4 Helpers =================
     def publish_offboard_control_mode(self):
+        """ Publishes the heartbeat to keep Offboard mode active """
         msg = OffboardControlMode()
         msg.timestamp = self.get_clock().now().nanoseconds // 1000
         msg.position = False
         msg.velocity = False
         msg.acceleration = False
         msg.attitude = False
-        msg.body_rate = True          
-        msg.thrust_and_torque = False
-        msg.direct_actuator = False
+        msg.body_rate = True # We are controlling Body Rates + Thrust
         self.offboard_pub.publish(msg)
-    
+
     def arm(self):
+        """ Sends the Arm command """
         cmd = VehicleCommand()
         cmd.timestamp = self.get_clock().now().nanoseconds // 1000
         cmd.command = VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM
-        cmd.param1 = 1.0   # arm
-        cmd.param2 = 0.0
-        cmd.param3 = 0.0
-        cmd.param4 = 0.0
-        cmd.param5 = 0.0
-        cmd.param6 = 0.0
-        cmd.param7 = 0.0
+        cmd.param1 = 1.0 # 1 = Arm
         cmd.target_system = 1
         cmd.target_component = 1
         cmd.source_system = 1
         cmd.source_component = 1
         cmd.from_external = True
         self.cmd_pub.publish(cmd)
-    
+
     def set_offboard_mode(self):
+        """ Switches PX4 to Offboard mode """
         cmd = VehicleCommand()
         cmd.timestamp = self.get_clock().now().nanoseconds // 1000
         cmd.command = VehicleCommand.VEHICLE_CMD_DO_SET_MODE
-        cmd.param1 = 1.0    # PX4 custom mode
-        cmd.param2 = 6.0    # OFFBOARD
-        cmd.param3 = 0.0
-        cmd.param4 = 0.0
-        cmd.param5 = 0.0
-        cmd.param6 = 0.0
-        cmd.param7 = 0.0
+        cmd.param1 = 1.0
+        cmd.param2 = 6.0 # 6 = OFFBOARD
         cmd.target_system = 1
         cmd.target_component = 1
         cmd.source_system = 1
@@ -165,38 +207,38 @@ class OffboardMPPI(Node):
         cmd.from_external = True
         self.cmd_pub.publish(cmd)
 
-
-
-
-
-    def odometry_cb(self, msg):
-        self.state_ned[0:3] = msg.position
-        self.state_ned[3:6] = msg.velocity
-        self.state_ned[6:10] = msg.q
-        self.state_ned[10:13] = msg.angular_velocity
-
-        # Convert NED to ENU
-        self.state_enu = Ned2EnuConverter.ned_to_enu(self.state_ned)
-
-    
-    # ================= Publish =================
-    def publish_rates(self, thrust_cmd, p, q, r):
+    def publish_rates(self, thrust_norm, p, q, r):
+        """ 
+        Publishes the control output.
+        Note on Frames: 
+        MPPI outputs in ENU. PX4 expects NED body rates.
+        ENU Roll Rate (+X) -> NED Roll Rate (+X)
+        ENU Pitch Rate (+Y) -> NED Pitch Rate (-Y) (Inverted)
+        ENU Yaw Rate (+Z) -> NED Yaw Rate (-Z) (Inverted)
+        """
         msg = VehicleRatesSetpoint()
-        msg.timestamp = self.get_clock().now().nanoseconds // 1000  # microseconds
-        msg.roll = p
-        msg.pitch = -q
-        msg.yaw = -r
-        msg.thrust_body[:] = [0.0, 0.0, -thrust_cmd]
+        msg.timestamp = self.get_clock().now().nanoseconds // 1000
+        msg.roll = float(p)
+        msg.pitch = float(-q) # Convert to NED
+        msg.yaw = float(-r)   # Convert to NED
+        
+        # PX4 Frame: Z is Down. To fly UP, we need negative Z force in body frame.
+        msg.thrust_body[:] = [0.0, 0.0, -thrust_norm] 
+        
         self.rate_pub.publish(msg)
-
-
-
-
 
     # ================= Main Loop =================
     def control_loop(self):
         self.publish_offboard_control_mode()
 
+        # 1. Wait for valid trajectory
+        if self.ref_traj_enu is None:
+            if self.offboard_setpoint_counter % 20 == 0:
+                self.get_logger().info("⏳ Waiting for Reference Trajectory...")
+            self.offboard_setpoint_counter += 1
+            return
+
+        # 2. Arming Sequence
         if not self.offboard_ready:
             self.publish_offboard_control_mode()
             self.publish_rates(0.0, 0.0, 0.0, 0.0)
@@ -210,87 +252,37 @@ class OffboardMPPI(Node):
             self.offboard_setpoint_counter += 1
             return
 
-        # -------- Current mission time --------
-        t_now = self.get_clock().now().nanoseconds * 1e-9 - self.t_start
-
-
-        # --- TEST BYPASS MPPI ---
-        # 75% riesce a decollare
-        #thrust_cmd = 19.62/self.max_thrust  # 75% thrust 
-        #self.publish_rates(thrust_cmd, 0.0, 0.0, 0.0)
-        #self.get_logger().info(f"TEST BYPASS: Thrust Cmd {thrust_cmd}")
-        
-
-
-        # -------- Reference trajectory --------
-        ref_enu = np.zeros((self.H, 13), dtype=np.float32)
-        for k in range(self.H):
-            t_k = t_now + k * self.dt
-            ref_enu[k] = self.mission.get_reference(t_k)
-
-        # -------- Convert ENU -> NED --------
-        # ref_ned = np.array([Enu2NedConverter.enu_to_ned(x) for x in ref_enu])
-
-        # -------- MPPI control --------
-        #u, _, _ = self.mppi.get_control(self.state_ned, ref_ned)
+        # 3. MPPI Optimization Step
         try:
-            u, comp_time, min_cost = self.mppi.get_control(self.state_enu, ref_enu)
-        except ValueError:
-            ret = self.mppi.get_control(self.state_enu, ref_enu)
-            u = ret[0]
-            comp_time = 0.0
-            min_cost = 0.0
-        u, _, _ = self.mppi.get_control(self.state_enu, ref_enu)
-        thrust, p, q, r = u
-        
-        
-        # -------- Saturation --------
-        thrust_cmd = np.clip(thrust/self.max_thrust, 0.0, 1.0)
-        rates = np.clip([p, q, r], self.rate_min, self.rate_max)
-
-        # -------- Publish rates --------
-        self.publish_rates(thrust_cmd, rates[0], rates[1], rates[2])
-
-        # -------- Log data --------
-        if self.log_file: # Safety check
-            t_log = self.get_clock().now().nanoseconds * 1e-9
+            # Execute JAX-based MPPI
+            u, comp_time, min_cost = self.mppi.get_control(self.state_enu, self.ref_traj_enu)
             
-            x, y, z = self.state_enu[0:3]
-            vx, vy, vz = self.state_enu[3:6]
-            
-            ref_x, ref_y, ref_z = ref_enu[0, 0:3]
-            ref_vx, ref_vy, ref_vz = ref_enu[0, 3:6]
+            # Unpack u = [Thrust(N), p, q, r]
+            thrust, p, q, r = u
 
-            self.log_file.write(
-                f"{t_log:.4f}    {comp_time:.4f}     {min_cost:.4f}|  "
-                f"{thrust:.3f}   {rates[0]:.3f}   {rates[1]:.3f}     {rates[2]:.3f}|  "
-                f"{x:.3f}    {y:.3f}    {z:.3f}|     "
-                f"{ref_x:.3f}    {ref_y:.3f}    {ref_z:.3f}|  "
-                f"{vx:.3f}    {vy:.3f}    {vz:.3f}|   "
-                f"{ref_vx:.3f}    {ref_vy:.3f}    {ref_vz:.3f}\n"
-            )
+            # Saturation & Normalization
+            thrust_norm = np.clip(thrust / self.max_thrust, 0.0, 1.0)
+            rates = np.clip([p, q, r], self.rate_min, self.rate_max)
 
-        # flush every 20 lines
-        self.log_counter += 1
-        if self.log_counter % 20 == 0:
-            self.log_file.flush()
+            # Publish
+            self.publish_rates(thrust_norm, rates[0], rates[1], rates[2])
 
-        
+        except Exception as e:
+            self.get_logger().error(f"MPPI Error: {e}")
+            # Failsafe: Gentle hover thrust to prevent freefall during errors
+            self.publish_rates(0.1, 0.0, 0.0, 0.0)
 
-
-
-    
-
-
-# ================= Main =================
 def main(args=None):
     rclpy.init(args=args)
     node = OffboardMPPI()
-    rclpy.spin(node)
-    node.log_file.close()
-    node.destroy_node()
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

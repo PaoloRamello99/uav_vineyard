@@ -1,0 +1,20 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "extraPaths": [
+    "/opt/ros/jazzy/lib/python3.12/site-packages",
+    "install/px4_msgs/lib/python3.12/site-packages",
+    "install/quadrotor_msgs/lib/python3.12/site-packages",
+    "install/automatic_uav_mppi/lib/python3.12/site-packages",
+    "src/*/"
+  ],
+  "typeCheckingMode": "basic",
+  "reportMissingImports": "warning",
+  "reportMissingTypeStubs": false,
+  "reportUnknownArgumentType": false,
+  "reportUnknownParameterType": false,
+  "reportUnknownMemberType": false,
+  "reportUnknownVariableType": false,
+  "reportUnnecessaryTypeIgnoreComment": false,
+  "reportImplicitOverride": false
+}

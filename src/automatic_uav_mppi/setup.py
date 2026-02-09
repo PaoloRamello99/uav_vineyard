@@ -14,6 +14,8 @@ setup(
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', 'automatic_uav_mppi', 'launch'),
         glob('launch/*.launch.py')),
+        (os.path.join("share", package_name, "config"),
+            glob("automatic_uav_mppi/config/*.yaml"),),
     ],
     install_requires=[
         'setuptools',
@@ -32,8 +34,12 @@ setup(
     entry_points={
         'console_scripts': [
             'offboard_mppi = automatic_uav_mppi.offboard_mppi:main',
+            'mppi_rate_node = automatic_uav_mppi.mppi_rate_node:main',
+            'reference_node = automatic_uav_mppi.reference_node:main',
+            'serpentine_trajectory = automatic_uav_mppi.serpentine_trajectory:main',
             'Enu2Ned = automatic_uav_mppi.coordinates_conversion.Enu2Ned:main',
             'Ned2Enu = automatic_uav_mppi.coordinates_conversion.Ned2Enu:main',
+            'lemniscate_node = automatic_uav_mppi.lemniscate_trajectory.lemniscate_node:main',
         ],
     },
 )
