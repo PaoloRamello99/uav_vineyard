@@ -7,7 +7,12 @@
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy, QoSHistoryPolicy
+from rclpy.qos import (
+    QoSProfile,
+    QoSReliabilityPolicy,
+    QoSDurabilityPolicy,
+    QoSHistoryPolicy,
+)
 
 # Controller MPPI
 from uav_control_py.controller.mppi.mppi_rate import MPPIRateController
@@ -26,10 +31,11 @@ from px4_msgs.msg import (
 )
 from quadrotor_msgs.msg import StateReference
 
+
 class OffboardMPPI(Node):
     def __init__(self):
         super().__init__("offboard_mppi")
-        
+
         # ================= QoS Profiles =================
         # Best effort is preferred for high-frequency telemetry/control topics
         qos_pub = QoSProfile(
@@ -50,21 +56,18 @@ class OffboardMPPI(Node):
         self.create_subscription(
             VehicleOdometry, "/fmu/out/vehicle_odometry", self.odometry_cb, qos_sub
         )
-        
+
         # 2. Status (Arming/Mode)
         self.status_sub = self.create_subscription(
             VehicleStatus,
-            "/fmu/out/vehicle_status_v1", # Verify if your PX4 version uses _v1
+            "/fmu/out/vehicle_status_v1",  # Verify if your PX4 version uses _v1
             self.vehicle_status_callback,
             qos_sub,
         )
 
         # 3. Reference Trajectory (ENU frame from Serpentine Node)
         self.ref_sub = self.create_subscription(
-            StateReference, 
-            "/command/state_reference", 
-            self.reference_callback, 
-            10
+            StateReference, "/command/state_reference", self.reference_callback, 10
         )
 
         # ================= Publishers =================
@@ -81,16 +84,16 @@ class OffboardMPPI(Node):
         # ================= MPPI Controller =================
         self.config = load_mppi_config()
         self.mppi = MPPIRateController(self.config)
-        self.dt = float(self.config["dt"]) 
-        self.H = self.mppi.horizon 
+        self.dt = float(self.config["dt"])
+        self.H = self.mppi.horizon
 
         # ================= Internal State =================
         self.state_ned = np.zeros(13, dtype=np.float32)
         self.state_enu = np.zeros(13, dtype=np.float32)
-        self.state_enu[6] = 1.0 # Initialize Quaternion w=1
-        
+        self.state_enu[6] = 1.0  # Initialize Quaternion w=1
+
         # We start with None to prevent arming before a trajectory exists
-        self.ref_traj_enu = None 
+        self.ref_traj_enu = None
 
         # Control Limits
         self.max_thrust = self.config["max_thrust"]
@@ -121,12 +124,12 @@ class OffboardMPPI(Node):
         self.arming_state = msg.arming_state
 
     def odometry_cb(self, msg):
-        """ Receives Odometry (NED) and converts to ENU for MPPI """
+        """Receives Odometry (NED) and converts to ENU for MPPI"""
         self.state_ned[0:3] = msg.position
         self.state_ned[3:6] = msg.velocity
         self.state_ned[6:10] = msg.q
         self.state_ned[10:13] = msg.angular_velocity
-        
+
         # Convert NED to ENU
         self.state_enu = Ned2EnuConverter.ned_to_enu(self.state_ned)
 
@@ -136,7 +139,7 @@ class OffboardMPPI(Node):
         and converts it to the numpy format required by MPPI (Jax).
         """
         traj = np.zeros((self.H, 13), dtype=np.float32)
-        
+
         n_points = len(msg.poses)
         if n_points == 0:
             return
@@ -170,22 +173,22 @@ class OffboardMPPI(Node):
 
     # ================= PX4 Helpers =================
     def publish_offboard_control_mode(self):
-        """ Publishes the heartbeat to keep Offboard mode active """
+        """Publishes the heartbeat to keep Offboard mode active"""
         msg = OffboardControlMode()
         msg.timestamp = self.get_clock().now().nanoseconds // 1000
         msg.position = False
         msg.velocity = False
         msg.acceleration = False
         msg.attitude = False
-        msg.body_rate = True # We are controlling Body Rates + Thrust
+        msg.body_rate = True  # We are controlling Body Rates + Thrust
         self.offboard_pub.publish(msg)
 
     def arm(self):
-        """ Sends the Arm command """
+        """Sends the Arm command"""
         cmd = VehicleCommand()
         cmd.timestamp = self.get_clock().now().nanoseconds // 1000
         cmd.command = VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM
-        cmd.param1 = 1.0 # 1 = Arm
+        cmd.param1 = 1.0  # 1 = Arm
         cmd.target_system = 1
         cmd.target_component = 1
         cmd.source_system = 1
@@ -194,12 +197,12 @@ class OffboardMPPI(Node):
         self.cmd_pub.publish(cmd)
 
     def set_offboard_mode(self):
-        """ Switches PX4 to Offboard mode """
+        """Switches PX4 to Offboard mode"""
         cmd = VehicleCommand()
         cmd.timestamp = self.get_clock().now().nanoseconds // 1000
         cmd.command = VehicleCommand.VEHICLE_CMD_DO_SET_MODE
         cmd.param1 = 1.0
-        cmd.param2 = 6.0 # 6 = OFFBOARD
+        cmd.param2 = 6.0  # 6 = OFFBOARD
         cmd.target_system = 1
         cmd.target_component = 1
         cmd.source_system = 1
@@ -208,9 +211,9 @@ class OffboardMPPI(Node):
         self.cmd_pub.publish(cmd)
 
     def publish_rates(self, thrust_norm, p, q, r):
-        """ 
+        """
         Publishes the control output.
-        Note on Frames: 
+        Note on Frames:
         MPPI outputs in ENU. PX4 expects NED body rates.
         ENU Roll Rate (+X) -> NED Roll Rate (+X)
         ENU Pitch Rate (+Y) -> NED Pitch Rate (-Y) (Inverted)
@@ -218,13 +221,15 @@ class OffboardMPPI(Node):
         """
         msg = VehicleRatesSetpoint()
         msg.timestamp = self.get_clock().now().nanoseconds // 1000
+        # RICC: It should be FRD (body)
+        # https://docs.px4.io/main/en/msg_docs/VehicleRatesSetpoint
         msg.roll = float(p)
-        msg.pitch = float(-q) # Convert to NED
-        msg.yaw = float(-r)   # Convert to NED
-        
+        msg.pitch = float(-q)  # Convert to NED
+        msg.yaw = float(-r)  # Convert to NED
+
         # PX4 Frame: Z is Down. To fly UP, we need negative Z force in body frame.
-        msg.thrust_body[:] = [0.0, 0.0, -thrust_norm] 
-        
+        msg.thrust_body[:] = [0.0, 0.0, -thrust_norm]
+
         self.rate_pub.publish(msg)
 
     # ================= Main Loop =================
@@ -243,8 +248,8 @@ class OffboardMPPI(Node):
             self.publish_offboard_control_mode()
             self.publish_rates(0.0, 0.0, 0.0, 0.0)
             self.arm()
-            
-            if self.offboard_setpoint_counter == int(1/self.dt):
+
+            if self.offboard_setpoint_counter == int(1 / self.dt):
                 self.set_offboard_mode()
                 self.offboard_ready = True
                 self.t_start = self.get_clock().now().nanoseconds * 1e-9
@@ -255,8 +260,10 @@ class OffboardMPPI(Node):
         # 3. MPPI Optimization Step
         try:
             # Execute JAX-based MPPI
-            u, comp_time, min_cost = self.mppi.get_control(self.state_enu, self.ref_traj_enu)
-            
+            u, comp_time, min_cost = self.mppi.get_control(
+                self.state_enu, self.ref_traj_enu
+            )
+
             # Unpack u = [Thrust(N), p, q, r]
             thrust, p, q, r = u
 
@@ -272,6 +279,7 @@ class OffboardMPPI(Node):
             # Failsafe: Gentle hover thrust to prevent freefall during errors
             self.publish_rates(0.1, 0.0, 0.0, 0.0)
 
+
 def main(args=None):
     rclpy.init(args=args)
     node = OffboardMPPI()
@@ -283,6 +291,7 @@ def main(args=None):
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+
 
 if __name__ == "__main__":
     main()
