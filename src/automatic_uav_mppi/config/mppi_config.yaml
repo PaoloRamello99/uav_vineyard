@@ -1,0 +1,75 @@
+# MPPI Controller Configuration
+# ROS 2 parameter file format — use '/**' so any node name matches.
+"/**":
+    ros__parameters:
+        # Control frequency
+        mppi_ctl_fq: 50.0
+
+        # UAV physical parameters
+        uav:
+            mass: 2.0
+            inertia_xx: 0.02166
+            inertia_yy: 0.02166
+            inertia_zz: 0.04
+            motor_constant: 8.54858e-6
+            torque_constant: 0.016
+            arm_length: 0.25
+            max_motor_speed: 1000.0
+
+        # Behaviour flags
+        use_future_reference: true
+        use_custom_controller: false # Inner loop controller
+
+        # Offboard settings
+        offboard:
+            auto_arm: true
+            auto_offboard: true
+            setpoint_count: 10
+
+        # Takeoff settings
+        takeoff:
+            auto_exit: true
+            height_tolerance: 0.2
+            velocity_tolerance: 0.2
+
+        # MPPI parameters
+        mppi:
+            n_samples: 900
+            horizon: 25
+            temperature: 1000.0 # inverse temperature
+            ctrl_noise_scale: [4.0, 2.0, 2.0, 0.5]
+            # State cost Q (13-dim): [x,y,z, vx,vy,vz, qw,qx,qy,qz, wx,wy,wz]
+            Q:
+                [
+                    1000.0,
+                    1000.0,
+                    1000.0,
+                    40.0,
+                    40.0,
+                    40.0,
+                    1.0,
+                    1.0,
+                    1.0,
+                    1.0,
+                    0.1,
+                    0.1,
+                    0.1,
+                ]
+            # Control cost R: [thrust, roll_rate, pitch_rate, yaw_rate]
+            R: [0.01, 0.05, 0.05, 0.10]
+            # Control rate cost R_rate
+            R_rate: [1.0, 0.2, 0.2, 5.0]
+            # Control limits
+            control_min: [0.0, -3.0, -3.0, -1.0]
+            # control_max: thrust max is computed from motor params; overrides here
+            # control_max: [34.19, 3.0, 3.0, 1.0]
+
+        # Savitzky-Golay filter
+        filter:
+            enabled: true
+            window_length: 11
+            polyorder: 3
+
+        # Model selection (not consumed as ROS params, kept for reference)
+        model:
+            name: "x500"
