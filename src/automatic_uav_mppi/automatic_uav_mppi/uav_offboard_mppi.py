@@ -27,9 +27,9 @@ from px4_msgs.msg import (
 from quadrotor_msgs.msg import AttitudeReference, StateReference
 
 
-class QuadRateMPPINode(Node):
+class UAVOffboardMPPI(Node):
     def __init__(self):
-        super().__init__("quad_rate_mppi_node")
+        super().__init__("uav_offboard_mppi")
 
         self.px4_qos = QoSProfile(
             reliability=QoSReliabilityPolicy.BEST_EFFORT,
@@ -449,11 +449,11 @@ class QuadRateMPPINode(Node):
             f"z={msg.z:.4f}",
             once=True,
         )
-        self.pos_[0] = msg.x
-        self.pos_[1] = -msg.y
+        self.pos_[0] = msg.y
+        self.pos_[1] = msg.x
         self.pos_[2] = -msg.z
-        self.vel_[0] = msg.vx
-        self.vel_[1] = -msg.vy
+        self.vel_[0] = msg.vy
+        self.vel_[1] = msg.vx
         self.vel_[2] = -msg.vz
 
     def attitude_callback_(self, msg):
@@ -466,8 +466,8 @@ class QuadRateMPPINode(Node):
             once=True,
         )
         self.att_[0] = msg.q[0]
-        self.att_[1] = msg.q[1]
-        self.att_[2] = -msg.q[2]
+        self.att_[1] = msg.q[2]
+        self.att_[2] = msg.q[1]
         self.att_[3] = -msg.q[3]
 
     def angular_velocity_callback_(self, msg):
@@ -852,7 +852,7 @@ class QuadRateMPPINode(Node):
 def main(args=None):
     rclpy.init(args=args)
 
-    quad_rate_mppi_node = QuadRateMPPINode()
+    quad_rate_mppi_node = UAVOffboardMPPI()
 
     try:
         rclpy.spin(quad_rate_mppi_node)

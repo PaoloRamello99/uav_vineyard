@@ -38,19 +38,35 @@ def generate_launch_description():
         cmd=['make', 'px4_sitl', 'gz_x500'],
         cwd=LaunchConfiguration('px4_dir'),
         output='screen',
-        #additional_env={'PX4_GZ_WORLD': LaunchConfiguration('world')},
+        additional_env={
+            'PX4_SIM_SPEED_FACTOR': '0.5',  # <--- Real Time Factor a 0.5
+            # 'PX4_GZ_WORLD': LaunchConfiguration('world') 
+        },
         name='px4_sitl'
     )
 
     # --- 3. EXECUTABLE NODES ---
-    offboard_mppi_node = Node(
-        package='automatic_uav_mppi',
-        executable='offboard_mppi',
-        name='offboard_mppi_node',
-        output='screen',
-        emulate_tty=True,
-        parameters=[{'use_sim_time': True}]
-    )
+    #offboard_mppi_node = Node(
+    #    package='automatic_uav_mppi',
+    #    executable='offboard_mppi',
+    #    name='offboard_mppi_node',
+    #    output='screen',
+    #    emulate_tty=True,
+    #    parameters=[{'use_sim_time': True}]
+    #)
+
+    #uav_offboard_mppi = Node(
+    #    package='automatic_uav_mppi',
+    #    executable='uav_offboard_mppi',
+    #    name='uav_offboard_mppi',
+    #    output='screen',
+    #    emulate_tty=True,
+    #    parameters=[{'use_sim_time': True}],
+    #    remappings=[
+    #        ("fmu/out/vehicle_status", "fmu/out/vehicle_status_v1"),
+    #        ("fmu/out/vehicle_local_position", "fmu/out/vehicle_local_position_v1"),
+    #    ],
+    #)
 
     serpentine_trajectory = Node(
         package="automatic_uav_mppi",
@@ -70,18 +86,18 @@ def generate_launch_description():
     #    parameters=[{"use_sim_time": True}],
     #)
 
-    #mppi_rate_node = Node(
-    #    package="automatic_uav_mppi",
-    #    executable="mppi_rate_node",
-    #    name="mppi_rate_node",
-    #    output="screen",
-    #    emulate_tty=True,
-    #    parameters=[{"use_sim_time": True}],
-    #    remappings=[
-    #        ("fmu/out/vehicle_status", "fmu/out/vehicle_status_v1"),
-    #        ("fmu/out/vehicle_local_position", "fmu/out/vehicle_local_position_v1"),
-    #    ],
-    #)
+    mppi_rate_node = Node(
+        package="automatic_uav_mppi",
+        executable="mppi_rate_node",
+        name="mppi_rate_node",
+        output="screen",
+        emulate_tty=True,
+        parameters=[{"use_sim_time": True}],
+        remappings=[
+            ("fmu/out/vehicle_status", "fmu/out/vehicle_status_v1"),
+            ("fmu/out/vehicle_local_position", "fmu/out/vehicle_local_position_v1"),
+        ],
+    )
 
     #lemniscate_node = Node(
     #    package="automatic_uav_mppi",
@@ -101,8 +117,9 @@ def generate_launch_description():
         if 'Ready for takeoff!' in event.text.decode():
             return [
                 LogInfo(msg="Starting MPPI node..."),
-                offboard_mppi_node,
-                #mppi_rate_node,
+                #offboard_mppi_node,
+                #uav_offboard_mppi,
+                mppi_rate_node,
                 serpentine_trajectory  
                 #lemniscate_node
                 #reference_node

@@ -219,8 +219,8 @@ class OffboardMPPI(Node):
         msg = VehicleRatesSetpoint()
         msg.timestamp = self.get_clock().now().nanoseconds // 1000
         msg.roll = float(p)
-        msg.pitch = float(-q) # Convert to NED
-        msg.yaw = float(-r)   # Convert to NED
+        msg.pitch = float(-q) # Convert to FRD
+        msg.yaw = float(-r)   # Convert to FRD
         
         # PX4 Frame: Z is Down. To fly UP, we need negative Z force in body frame.
         msg.thrust_body[:] = [0.0, 0.0, -thrust_norm] 

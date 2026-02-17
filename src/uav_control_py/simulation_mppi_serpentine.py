@@ -119,7 +119,7 @@ def generate_mission_reference(
                          1, 0, 0, 0, 0, 0, 0], dtype=np.float32)
 
     # =========================
-    # 3) SERPENTINA (Invariata)
+    # 3) SERPENTINA 
     # =========================
     elif t < t3:
         ts = t - t2

@@ -38,7 +38,7 @@ class MPPIRateController:
         # Extract parameters from config
         self.dt = config.get("dt", 0.02)  # Control timestep
         self.n_samples = config.get("n_samples", 900)  # Number of samples for MPPI
-        self.horizon = config.get("horizon", 25)  # Prediction horizon
+        self.horizon = config.get("horizon", 50)  # Prediction horizon
         self.temperature = config.get(
             "temperature", 1e-3
         )  # Temperature parameter for weighting
