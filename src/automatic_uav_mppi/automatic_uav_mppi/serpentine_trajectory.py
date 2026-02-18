@@ -127,12 +127,12 @@ class SerpentineTrajectory(Node):
     # ======================================================================
 
     def position_callback(self, msg: VehicleLocalPosition):
-        self.current_position[0] = msg.x
-        self.current_position[1] = -msg.y
+        self.current_position[0] = msg.y
+        self.current_position[1] = msg.x
         self.current_position[2] = -msg.z
 
-        self.current_velocity[0] = msg.vx
-        self.current_velocity[1] = -msg.vy
+        self.current_velocity[0] = msg.vy
+        self.current_velocity[1] = msg.vx
         self.current_velocity[2] = -msg.vz
 
         self.get_logger().debug(

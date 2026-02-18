@@ -478,8 +478,8 @@ class UAVOffboardMPPI(Node):
             f"r={msg.xyz[2]:.4f}",
             once=True,
         )
-        self.body_rates_[0] = msg.xyz[0]
-        self.body_rates_[1] = -msg.xyz[1]
+        self.body_rates_[0] = msg.xyz[1]
+        self.body_rates_[1] = msg.xyz[0]
         self.body_rates_[2] = -msg.xyz[2]
 
     def status_callback_(self, msg):
@@ -808,12 +808,12 @@ class UAVOffboardMPPI(Node):
                 predicted_quat = predicted_rot.as_quat()
 
                 att_ref_msg.attitude.w = predicted_quat[3]
-                att_ref_msg.attitude.x = predicted_quat[0]
-                att_ref_msg.attitude.y = -predicted_quat[1]
+                att_ref_msg.attitude.x = predicted_quat[1]
+                att_ref_msg.attitude.y = predicted_quat[0]
                 att_ref_msg.attitude.z = -predicted_quat[2]
 
-                att_ref_msg.angular_velocity.x = roll_rate
-                att_ref_msg.angular_velocity.y = -pitch_rate
+                att_ref_msg.angular_velocity.x = pitch_rate
+                att_ref_msg.angular_velocity.y = roll_rate
                 att_ref_msg.angular_velocity.z = -yaw_rate
 
                 self.attitude_reference_pub_.publish(att_ref_msg)
@@ -821,8 +821,8 @@ class UAVOffboardMPPI(Node):
                 if not self.use_custom_controller:
                     rates_msg = VehicleRatesSetpoint()
                     rates_msg.timestamp = int(Clock().now().nanoseconds / 1000)
-                    rates_msg.roll = roll_rate
-                    rates_msg.pitch = -pitch_rate
+                    rates_msg.roll = pitch_rate
+                    rates_msg.pitch = roll_rate
                     rates_msg.yaw = -yaw_rate
                     rates_msg.thrust_body = [0.0, 0.0, thrust_normalized]
 
