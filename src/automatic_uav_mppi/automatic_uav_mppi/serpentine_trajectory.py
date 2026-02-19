@@ -27,9 +27,11 @@ class UAVState:
     FLIGHT = 3
 
 class SerpentineState:
+    TO_VINEYARD = 9
     STRAIGHT = 10
     TURN = 11
-    FINISH = 12
+    TO_HOME = 12
+    FINISH = 13
 
 class SerpentineTrajectory(Node):
 
@@ -38,7 +40,7 @@ class SerpentineTrajectory(Node):
         
         # --- Declare Parameters ---
         self.declare_parameter("home", [0.0, 0.0, 0.0])
-        self.declare_parameter("first_row", [0.0, 0.0, 3.0])
+        self.declare_parameter("first_row", [10.0, 10.0, 3.0])
         self.declare_parameter("initial_velocity", [0.0, 0.0, 0.0])
         self.declare_parameter("height", 3.0)
         self.declare_parameter("row_length", 20.0)
@@ -48,6 +50,7 @@ class SerpentineTrajectory(Node):
         self.declare_parameter("pub_frequency", 50.0)
         self.declare_parameter("trajectory_steps", 50)
         self.declare_parameter("takeoff_threshold", 0.3)
+        self.declare_parameter("to_vineyard_threshold", 0.3)
         self.declare_parameter("straight_threshold", 0.3)
         self.declare_parameter("theta_threshold", 0.3)
         self.declare_parameter("hold_time", 3.0)
@@ -66,6 +69,7 @@ class SerpentineTrajectory(Node):
         self.pub_frequency = (self.get_parameter("pub_frequency").get_parameter_value().double_value)
         self.trajectory_steps = (self.get_parameter("trajectory_steps").get_parameter_value().integer_value)
         self.takeoff_threshold = self.get_parameter("takeoff_threshold").value
+        self.to_vineyard_threshold = self.get_parameter("to_vineyard_threshold").value
         self.straight_threshold = self.get_parameter("straight_threshold").value
         self.theta_threshold = self.get_parameter("theta_threshold").value
         self.hold_time = self.get_parameter("hold_time").get_parameter_value().double_value
@@ -76,6 +80,11 @@ class SerpentineTrajectory(Node):
         self.radius_turn = self.row_spacing / 2
         self.t_start_straight = None
         self.t_start_turn = None
+        self.t_start_to_vineyard = None
+        self.t_start_to_home = None
+
+        self.x_last_row = None
+        self.y_last_row = None
         
         # QoS      
         qos = QoSProfile(
@@ -119,7 +128,7 @@ class SerpentineTrajectory(Node):
         
         # --- Precompute geographic serpentine ---
         self.row_idx = 0
-        self.serpentine_state = SerpentineState.STRAIGHT
+        self.serpentine_state = SerpentineState.TO_VINEYARD
 
 
     # ======================================================================
@@ -439,8 +448,52 @@ class SerpentineTrajectory(Node):
 
 
     def serpentine_reference(self, t):
-        direction = 1 if self.row_idx % 2 == 0 else -1
         
+        # --- STATE: TO_VINEYARD ---
+        if self.serpentine_state == SerpentineState.TO_VINEYARD:
+
+            if self.t_start_to_vineyard is None:
+                self.t_start_to_vineyard = t
+            
+            dt_to_vineyard = t - self.t_start_to_vineyard
+            
+            dx = self.first_row[0] - self.home[0]
+            dy = self.first_row[1] - self.home[1]
+
+            total_distance = np.hypot(dx, dy)
+            travelled_distance = self.v_ref * dt_to_vineyard
+            phi = np.arctan2(dy, dx)
+
+            if travelled_distance >= total_distance:
+                x = self.first_row[0]
+                y = self.first_row[1]
+                vx = 0.0
+                vy = 0.0
+            else:
+                vx = self.v_ref * np.cos(phi)
+                vy = self.v_ref * np.sin(phi)
+                x = self.home[0] + vx * dt_to_vineyard
+                y = self.home[1] + vy * dt_to_vineyard
+
+            z = self.height
+            vz = 0.0
+
+            x_diff = abs(self.current_position[0] - self.first_row[0])
+            y_diff = abs(self.current_position[1] - self.first_row[1])
+            #z_diff = abs(self.current_position[2] - self.height)
+            
+            if x_diff<=self.to_vineyard_threshold and y_diff<=self.to_vineyard_threshold:
+                self.serpentine_state = SerpentineState.STRAIGHT
+                self.t_start_to_vineyard = None
+                self.t_start_straight = None
+                self.t_start_turn = None
+                return self.first_row[0], self.first_row[1], self.height, 0.0, 0.0, 0.0
+            else:
+                return x,y,z, vx,vy,vz
+
+        # --- SERPENTINE ---
+        direction = 1 if self.row_idx % 2 == 0 else -1
+
         # --- STATE: STRAIGHT ---
         if self.serpentine_state == SerpentineState.STRAIGHT:
             if self.t_start_straight is None:
@@ -502,7 +555,8 @@ class SerpentineTrajectory(Node):
             if theta >= np.pi:
                 self.row_idx += 1
                 if self.row_idx >= self.num_rows:
-                    self.serpentine_state = SerpentineState.FINISH
+                    self.serpentine_state = SerpentineState.TO_HOME
+                    self.t_start_to_home = None
                     return self.current_position[0], self.current_position[1], self.height, 0.0, 0.0, 0.0  
                 
                 self.serpentine_state = SerpentineState.STRAIGHT
@@ -510,6 +564,49 @@ class SerpentineTrajectory(Node):
                 self.t_start_straight = None
                 return x,y,z, vx,vy,vz
             
+            else:
+                return x,y,z, vx,vy,vz
+            
+        elif self.serpentine_state == SerpentineState.TO_HOME:
+            if self.t_start_to_home is None:
+                self.t_start_to_home = t
+                self.x_last_row = self.current_position[0]
+                self.y_last_row = self.current_position[1]
+            
+            dt_to_home = t - self.t_start_to_home
+            
+            dx = self.home[0] - self.x_last_row
+            dy = self.home[1] - self.y_last_row
+
+            total_distance = np.hypot(dx, dy)
+            travelled_distance = self.v_ref * dt_to_home
+            phi = np.arctan2(dy, dx)
+
+            if travelled_distance >= total_distance:
+                x = self.home[0]
+                y = self.home[1]
+                vx = 0.0
+                vy = 0.0
+            else:
+                vx = self.v_ref * np.cos(phi)
+                vy = self.v_ref * np.sin(phi)
+                x = self.x_last_row + vx * dt_to_home
+                y = self.y_last_row + vy * dt_to_home
+
+            z = self.height
+            vz = 0.0
+
+            x_diff = abs(self.current_position[0] - self.home[0])
+            y_diff = abs(self.current_position[1] - self.home[1])
+            #z_diff = abs(self.current_position[2] - self.height)
+            
+            if x_diff<=self.to_vineyard_threshold and y_diff<=self.to_vineyard_threshold:
+                self.serpentine_state = SerpentineState.FINISH
+                self.t_start_to_vineyard = None
+                self.t_start_straight = None
+                self.t_start_turn = None
+                self.t_start_to_home = None
+                return self.home[0], self.home[1], self.height, 0.0, 0.0, 0.0
             else:
                 return x,y,z, vx,vy,vz
         
