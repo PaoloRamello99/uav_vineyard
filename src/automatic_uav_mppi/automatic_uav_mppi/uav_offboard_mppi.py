@@ -251,6 +251,21 @@ class UAVOffboardMPPI(Node):
         self.filtered_pitch_rate = 0.0
         self.filtered_yaw_rate = 0.0
 
+
+        self.rot_ned_to_enu = R.from_matrix(np.array([
+            [0, 1, 0],
+            [1, 0, 0],
+            [0, 0, -1]
+        ]))
+        
+        self.rot_frd_to_flu = R.from_matrix(np.array([
+            [1, 0, 0],
+            [0, -1, 0],
+            [0, 0, -1]
+        ]))
+
+
+
         self.create_subscription(
             VehicleLocalPosition,
             "/fmu/out/vehicle_local_position_v1",
@@ -449,12 +464,11 @@ class UAVOffboardMPPI(Node):
             f"z={msg.z:.4f}",
             once=True,
         )
-        self.pos_[0] = msg.y
-        self.pos_[1] = msg.x
-        self.pos_[2] = -msg.z
-        self.vel_[0] = msg.vy
-        self.vel_[1] = msg.vx
-        self.vel_[2] = -msg.vz
+        pos_ned = np.array([msg.x, msg.y, msg.z])
+        vel_ned = np.array([msg.vx, msg.vy, msg.vz])
+
+        self.pos_ = self.rot_ned_to_enu.apply(pos_ned)
+        self.vel_ = self.rot_ned_to_enu.apply(vel_ned)
 
     def attitude_callback_(self, msg):
         self.get_logger().info(
@@ -465,10 +479,13 @@ class UAVOffboardMPPI(Node):
             f"q3={msg.q[3]:.4f}",
             once=True,
         )
-        self.att_[0] = msg.q[0]
-        self.att_[1] = msg.q[2]
-        self.att_[2] = msg.q[1]
-        self.att_[3] = -msg.q[3]
+        r_ned_frd = R.from_quat([msg.q[1], msg.q[2], msg.q[3], msg.q[0]])
+        r_enu_flu = self.rot_ned_to_enu * r_ned_frd * self.rot_frd_to_flu
+        q_enu_flu = r_enu_flu.as_quat()
+        self.att_[0] = q_enu_flu[3]  # w
+        self.att_[1] = q_enu_flu[0]  # x
+        self.att_[2] = q_enu_flu[1]  # y
+        self.att_[3] = q_enu_flu[2]  # z
 
     def angular_velocity_callback_(self, msg):
         self.get_logger().info(
@@ -478,9 +495,8 @@ class UAVOffboardMPPI(Node):
             f"r={msg.xyz[2]:.4f}",
             once=True,
         )
-        self.body_rates_[0] = msg.xyz[1]
-        self.body_rates_[1] = msg.xyz[0]
-        self.body_rates_[2] = -msg.xyz[2]
+        rates_frd = np.array([msg.xyz[0], msg.xyz[1], msg.xyz[2]])
+        self.body_rates_ = self.rot_frd_to_flu.apply(rates_frd)
 
     def status_callback_(self, msg):
         self.get_logger().info(
@@ -796,33 +812,33 @@ class UAVOffboardMPPI(Node):
                 att_ref_msg.thrust_body = [0.0, 0.0, thrust_normalized]
 
                 dt = self.mppi_timer_period
-                omega = np.array([roll_rate, -pitch_rate, -yaw_rate])
+                omega = np.array([roll_rate, pitch_rate, yaw_rate])
 
                 current_rot = R.from_quat(
                     [self.att_[1], self.att_[2], self.att_[3], self.att_[0]]
                 )
 
                 delta_rot = R.from_rotvec(omega * dt)
-                predicted_rot = delta_rot * current_rot
+                predicted_rot = current_rot * delta_rot
 
                 predicted_quat = predicted_rot.as_quat()
 
                 att_ref_msg.attitude.w = predicted_quat[3]
-                att_ref_msg.attitude.x = predicted_quat[1]
-                att_ref_msg.attitude.y = predicted_quat[0]
-                att_ref_msg.attitude.z = -predicted_quat[2]
+                att_ref_msg.attitude.x = predicted_quat[0]
+                att_ref_msg.attitude.y = predicted_quat[1]
+                att_ref_msg.attitude.z = predicted_quat[2]
 
-                att_ref_msg.angular_velocity.x = pitch_rate
-                att_ref_msg.angular_velocity.y = roll_rate
-                att_ref_msg.angular_velocity.z = -yaw_rate
+                att_ref_msg.angular_velocity.x = roll_rate
+                att_ref_msg.angular_velocity.y = pitch_rate
+                att_ref_msg.angular_velocity.z = yaw_rate
 
                 self.attitude_reference_pub_.publish(att_ref_msg)
 
                 if not self.use_custom_controller:
                     rates_msg = VehicleRatesSetpoint()
                     rates_msg.timestamp = int(Clock().now().nanoseconds / 1000)
-                    rates_msg.roll = pitch_rate
-                    rates_msg.pitch = roll_rate
+                    rates_msg.roll = roll_rate
+                    rates_msg.pitch = -pitch_rate
                     rates_msg.yaw = -yaw_rate
                     rates_msg.thrust_body = [0.0, 0.0, thrust_normalized]
 

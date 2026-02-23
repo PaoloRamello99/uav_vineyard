@@ -1,3 +1,5 @@
+import shutil
+import os
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, LogInfo, RegisterEventHandler
 from launch.event_handlers import OnProcessIO
@@ -6,6 +8,16 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
 
+    # --- 0. PRE-LAUNCH SETUP ---
+    source_world = '/workspaces/uav_vineyard/src/automatic_uav_mppi/worlds/vineyard_world.sdf'
+    target_world_dir = '/workspaces/PX4-Autopilot/Tools/simulation/gz/worlds/'
+    
+    if os.path.exists(source_world):
+        shutil.copy(source_world, target_world_dir)
+        print(f"✅ World file successfully copied to: {target_world_dir}")
+    else:
+        print(f"❌ WARNING: Original world file not found at: {source_world}")
+
     # --- 1. ARGUMENTS ---
     px4_dir_arg = DeclareLaunchArgument(
         'px4_dir',
@@ -13,11 +25,11 @@ def generate_launch_description():
         description='Path to the PX4 Firmware root directory'
     )
 
-    #world_arg = DeclareLaunchArgument(
-    #    'world',
-    #    default_value='vineyard_world',
-    #    description='Gazebo world to load'
-    #)
+    world_arg = DeclareLaunchArgument(
+        'world',
+        default_value='vineyard_world',
+        description='Gazebo world to load'
+    )
 
     # --- 2. INFRASTRUCTURE NODES ---
     ros_gz_bridge = Node(
@@ -40,7 +52,7 @@ def generate_launch_description():
         output='screen',
         additional_env={
             'PX4_SIM_SPEED_FACTOR': '0.5',  # <--- Real Time Factor a 0.5
-            # 'PX4_GZ_WORLD': LaunchConfiguration('world') 
+            'PX4_GZ_WORLD': LaunchConfiguration('world') 
         },
         name='px4_sitl'
     )
@@ -136,7 +148,7 @@ def generate_launch_description():
     return LaunchDescription([
         LogInfo(msg="🚀 Initializing environment..."),
         px4_dir_arg,
-        #world_arg,
+        world_arg,
         ros_gz_bridge,
         micro_xrce_agent,
         px4_sitl,
