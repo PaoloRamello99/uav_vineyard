@@ -33,8 +33,9 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'vineyard_offboard = automatic_uav_mppi.PID_controller.vineyard_offboard:main',
             'offboard_mppi = automatic_uav_mppi.offboard_mppi:main',
-            'uav_offboard_mppi = automatic_uav_mppi.uav_offboard_mppi:main', # <--- ADD COMMA HERE
+            'uav_offboard_mppi = automatic_uav_mppi.uav_offboard_mppi:main', 
             'mppi_rate_node = automatic_uav_mppi.mppi_rate_node:main',
             'reference_node = automatic_uav_mppi.reference_node:main',
             'serpentine_trajectory = automatic_uav_mppi.serpentine_trajectory:main',

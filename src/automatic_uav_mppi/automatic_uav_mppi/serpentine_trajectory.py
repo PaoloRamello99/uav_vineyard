@@ -25,6 +25,8 @@ class UAVState:
     TAKEOFF = 1
     HOLD = 2
     FLIGHT = 3
+    PRE_LAND_HOLD = 4
+    LANDING = 5
 
 class SerpentineState:
     TO_VINEYARD = 9
@@ -85,6 +87,9 @@ class SerpentineTrajectory(Node):
 
         self.x_last_row = None
         self.y_last_row = None
+
+
+        self.t_start_pre_landing = None
         
         # QoS      
         qos = QoSProfile(
@@ -187,8 +192,75 @@ class SerpentineTrajectory(Node):
         elif self.flight_state == UAVState.HOLD:
             self.publish_hold_position()
             self.check_hold_timeout()
+        elif self.flight_state == UAVState.PRE_LAND_HOLD:
+            self.publish_pre_landing_position()
+            self.check_pre_landing_timeout()
+        elif self.flight_state == UAVState.LANDING:
+            self.publish_landing_waypoint()
         else:
             self.publish_serpentine_trajectory()
+            if self.serpentine_state == SerpentineState.FINISH:
+                self.flight_state = UAVState.PRE_LAND_HOLD
+                self.t_start_pre_landing = self.get_clock().now()
+    
+    def publish_takeoff_waypoint(self):
+        """Publish the takeoff waypoint using StateReference format"""
+        pose_msg = PoseStamped()
+        pose_msg.header.stamp = self.get_clock().now().to_msg()
+        pose_msg.header.frame_id = "map"
+
+        pose_msg.pose.position.x = float(self.home[0])
+        pose_msg.pose.position.y = float(self.home[1])
+        pose_msg.pose.position.z = float(self.height)
+
+        pose_msg.pose.orientation.w = 1.0
+        pose_msg.pose.orientation.x = 0.0
+        pose_msg.pose.orientation.y = 0.0
+        pose_msg.pose.orientation.z = 0.0
+
+        self.pose_pub.publish(pose_msg)
+
+        vel_msg = TwistStamped()
+        vel_msg.header.stamp = self.get_clock().now().to_msg()
+        vel_msg.header.frame_id = "map"
+        vel_msg.twist.linear.x = 0.0
+        vel_msg.twist.linear.y = 0.0
+        vel_msg.twist.linear.z = 0.0
+        self.vel_pub.publish(vel_msg)
+
+        state_ref = StateReference()
+        state_ref.uav_state = String(data="TAKEOFF")
+
+        for _ in range(self.trajectory_steps):
+            pose = Pose()
+            pose.position.x = float(self.home[0])
+            pose.position.y = float(self.home[1])
+            pose.position.z = float(self.height)
+            pose.orientation.w = 1.0
+            pose.orientation.x = 0.0
+            pose.orientation.y = 0.0
+            pose.orientation.z = 0.0
+            state_ref.poses.append(pose)
+
+            twist = Twist()
+            twist.linear.x = 0.0
+            twist.linear.y = 0.0
+            twist.linear.z = 0.0
+            twist.angular.x = 0.0
+            twist.angular.y = 0.0
+            twist.angular.z = 0.0
+            state_ref.twists.append(twist)
+
+        self.state_ref_pub.publish(state_ref)
+
+        dist_to_takeoff = self.calculate_distance(
+            self.current_position, [self.home[0], self.home[1], self.height]
+        )
+
+        self.get_logger().debug(
+            f"Publishing takeoff waypoint: ({self.home[0]:.2f}, {self.home[1]:.2f}, {self.height:.2f}), "
+            f"Distance: {dist_to_takeoff:.2f}m"
+        )
 
     def check_hold_timeout(self):
         """Check if hold time has elapsed and transition to FLIGHT"""
@@ -262,8 +334,23 @@ class SerpentineTrajectory(Node):
                 f"remaining time: {remaining_time:.1f}s"
             )
 
-    def publish_takeoff_waypoint(self):
-        """Publish the takeoff waypoint using StateReference format"""
+    
+
+    def check_pre_landing_timeout(self):
+        """Check if hold time has elapsed and transition to LANDING"""
+        if self.t_start_pre_landing is not None:
+            current_time = self.get_clock().now()
+            elapsed_time = (current_time - self.t_start_pre_landing).nanoseconds / 1e9
+
+            if elapsed_time >= self.hold_time:
+                self.get_logger().info(
+                    f"Hold time of {self.hold_time}s elapsed. Landing..."
+                )
+                self.flight_state = UAVState.LANDING
+                self.t_start_pre_landing = None
+
+    def publish_pre_landing_position(self):
+        """Publish hold position at landing location"""
         pose_msg = PoseStamped()
         pose_msg.header.stamp = self.get_clock().now().to_msg()
         pose_msg.header.frame_id = "map"
@@ -288,7 +375,7 @@ class SerpentineTrajectory(Node):
         self.vel_pub.publish(vel_msg)
 
         state_ref = StateReference()
-        state_ref.uav_state = String(data="TAKEOFF")
+        state_ref.uav_state = String(data="PRE_LAND_HOLD")
 
         for _ in range(self.trajectory_steps):
             pose = Pose()
@@ -312,14 +399,89 @@ class SerpentineTrajectory(Node):
 
         self.state_ref_pub.publish(state_ref)
 
-        dist_to_takeoff = self.calculate_distance(
-            self.current_position, [self.home[0], self.home[1], self.height]
+        if self.t_start_pre_landing is not None:
+            current_time = self.get_clock().now()
+            elapsed_time = (current_time - self.t_start_pre_landing).nanoseconds / 1e9
+            remaining_time = max(0.0, self.hold_time - elapsed_time)
+
+            self.get_logger().debug(
+                f"Holding position at ({self.home[0]:.2f}, {self.home[1]:.2f}, {self.height:.2f}), "
+                f"remaining time: {remaining_time:.1f}s"
+            )
+
+    def publish_landing_waypoint(self):
+        """Publish the landing waypoint using StateReference format"""
+        pose_msg = PoseStamped()
+        pose_msg.header.stamp = self.get_clock().now().to_msg()
+        pose_msg.header.frame_id = "map"
+
+        pose_msg.pose.position.x = float(self.home[0])
+        pose_msg.pose.position.y = float(self.home[1])
+        pose_msg.pose.position.z = float(self.home[2])
+
+        pose_msg.pose.orientation.w = 1.0
+        pose_msg.pose.orientation.x = 0.0
+        pose_msg.pose.orientation.y = 0.0
+        pose_msg.pose.orientation.z = 0.0
+
+        self.pose_pub.publish(pose_msg)
+
+        vel_msg = TwistStamped()
+        vel_msg.header.stamp = self.get_clock().now().to_msg()
+        vel_msg.header.frame_id = "map"
+        vel_msg.twist.linear.x = 0.0
+        vel_msg.twist.linear.y = 0.0
+        vel_msg.twist.linear.z = 0.0
+        self.vel_pub.publish(vel_msg)
+
+        state_ref = StateReference()
+        state_ref.uav_state = String(data="LANDING")
+
+        for _ in range(self.trajectory_steps):
+            pose = Pose()
+            pose.position.x = float(self.home[0])
+            pose.position.y = float(self.home[1])
+            pose.position.z = float(self.home[2])
+            pose.orientation.w = 1.0
+            pose.orientation.x = 0.0
+            pose.orientation.y = 0.0
+            pose.orientation.z = 0.0
+            state_ref.poses.append(pose)
+
+            twist = Twist()
+            twist.linear.x = 0.0
+            twist.linear.y = 0.0
+            twist.linear.z = 0.0
+            twist.angular.x = 0.0
+            twist.angular.y = 0.0
+            twist.angular.z = 0.0
+            state_ref.twists.append(twist)
+
+        self.state_ref_pub.publish(state_ref)
+
+        dist_to_landing = self.calculate_distance(
+            self.current_position, [self.home[0], self.home[1], self.home[2]]
         )
 
         self.get_logger().debug(
-            f"Publishing takeoff waypoint: ({self.home[0]:.2f}, {self.home[1]:.2f}, {self.height:.2f}), "
-            f"Distance: {dist_to_takeoff:.2f}m"
+            f"Publishing landing waypoint: ({self.home[0]:.2f}, {self.home[1]:.2f}, {self.home[2]:.2f}), "
+            f"Distance: {dist_to_landing:.2f}m"
         )
+
+
+
+
+
+
+
+
+
+
+
+    
+
+
+
 
     def publish_serpentine_trajectory(self):
         """Publish the serpentine trajectory using StateReference format"""
@@ -443,9 +605,6 @@ class SerpentineTrajectory(Node):
             )
 
         return response
-
-
-
 
     def serpentine_reference(self, t):
         
@@ -615,8 +774,6 @@ class SerpentineTrajectory(Node):
             return self.current_position[0], self.current_position[1], self.height, 0.0, 0.0, 0.0
 
     
-
-
 
 def main(args=None):
     rclpy.init(args=args)

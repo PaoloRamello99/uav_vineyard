@@ -52,30 +52,18 @@ class VineyardOffboard(Node):
         self.dt = self.timer_period
 
         # Parametri vigneto
-        self.declare_parameter('home_x')
-        self.declare_parameter('home_y')
-        self.declare_parameter('home_z')
-        self.declare_parameter('first_row_x')
-        self.declare_parameter('first_row_y')
-        self.declare_parameter('row_length')
-        self.declare_parameter('row_spacing')
-        self.declare_parameter('num_rows')
-        self.declare_parameter('speed')
-        self.declare_parameter('lateral_speed')
-        self.declare_parameter('transit_speed')
-        self.declare_parameter('altitude')
-
-        #self.declare_parameter('home_x', 0.0)           # posizione X della stazione
-        #self.declare_parameter('home_y', -5.0)          # posizione Y della stazione
-        #self.declare_parameter('first_row_x', -10.0)    # posizione X del primo filare
-        #self.declare_parameter('first_row_y', 20.0)     # posizione Y del primo filare
-        #self.declare_parameter('row_length', 20.0)      # lunghezza filare (m)
-        #self.declare_parameter('row_spacing', 2.5)      # distanza tra filari (m)
-        #self.declare_parameter('num_rows', 10)          # numero di filari
-        #self.declare_parameter('speed', 1.0)            # velocità lungo filare (m/s)
-        #self.declare_parameter('lateral_speed', 0.5)    # velocità laterale (m/s)
-        #self.declare_parameter('transit_speed', 2.0)    # velocità per il transito (m/s)
-        #self.declare_parameter('altitude', 2.5)         # quota sopra terreno (m)
+        self.declare_parameter('home_x', 0.0)           # posizione X della stazione
+        self.declare_parameter('home_y', 0.0)           # posizione Y della stazione
+        self.declare_parameter('home_z', 0.0)
+        self.declare_parameter('first_row_x', -10.0)    # posizione X del primo filare
+        self.declare_parameter('first_row_y', 20.0)     # posizione Y del primo filare
+        self.declare_parameter('row_length', 20.0)      # lunghezza filare (m)
+        self.declare_parameter('row_spacing', 2.5)      # distanza tra filari (m)
+        self.declare_parameter('num_rows', 10)          # numero di filari
+        self.declare_parameter('speed', 1.0)            # velocità lungo filare (m/s)
+        self.declare_parameter('lateral_speed', 0.5)    # velocità laterale (m/s)
+        self.declare_parameter('transit_speed', 2.0)    # velocità per il transito (m/s)
+        self.declare_parameter('altitude', 2.5)         # quota sopra terreno (m)
 
         # Lettura parametri
         self.home_x = self.get_parameter('home_x').get_parameter_value().double_value
