@@ -1,5 +1,4 @@
 import os
-import shutil
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, LogInfo, RegisterEventHandler
 from launch.event_handlers import OnProcessIO
@@ -19,6 +18,14 @@ def generate_launch_description():
 
     # --- 2. INFRASTRUCTURE NODES ---
     
+    ros_gz_bridge = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        arguments=['/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock'],
+        output='screen',
+        parameters=[{'use_sim_time': True}]
+    )
+
     micro_xrce_agent = ExecuteProcess(
         cmd=['MicroXRCEAgent', 'udp4', '-p', '8888'],
         output='screen',
@@ -30,7 +37,8 @@ def generate_launch_description():
         cwd=LaunchConfiguration('px4_dir'),
         output='screen',
         additional_env={
-            'PX4_SIM_SPEED_FACTOR': '1.0',  
+            'PX4_SIM_SPEED_FACTOR': '0.3',  
+            'GZ_VERSION': 'harmonic' 
         },
         name='px4_sitl'
     )
@@ -42,7 +50,7 @@ def generate_launch_description():
         name='uav_offboard_mppi',
         output='screen',
         emulate_tty=True,
-        parameters=[{'use_sim_time': False}], 
+        parameters=[{'use_sim_time': True}], 
         remappings=[
             ("/fmu/out/vehicle_status", "/fmu/out/vehicle_status_v1"),
             ("/fmu/out/vehicle_local_position", "/fmu/out/vehicle_local_position_v1"),
@@ -55,17 +63,17 @@ def generate_launch_description():
         name="serpentine_trajectory",
         output="screen",
         emulate_tty=True,
-        parameters=[{"use_sim_time": False}], 
+        parameters=[{"use_sim_time": True}], 
     )
 
     # --- 4. CONTROL FUNCTION ---
     def on_px4_log_check(event):
         """
-        Function to check PX4 logs and start MPPI node on takeoff message.
+        Start the MPPI nodes only when PX4 is fully initialized and ready.
         """
         if 'Ready for takeoff!' in event.text.decode():
             return [
-                LogInfo(msg="Starting MPPI node..."),
+                LogInfo(msg="🚀 Clock synchronized. Launching MPPI and Trajectory..."),
                 uav_offboard_mppi,
                 serpentine_trajectory  
             ]
@@ -79,8 +87,9 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        LogInfo(msg="🚀 Initializing environment (Real Time, No Sim Clock)..."),
+        LogInfo(msg="Drone Lab: Gazebo Harmonic synchronization active..."),
         px4_dir_arg,
+        ros_gz_bridge, 
         micro_xrce_agent,
         px4_sitl,
         spawn_mppi_on_takeoff
