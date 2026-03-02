@@ -125,7 +125,7 @@ class VineyardOffboard(Node):
     def yaw_enu_to_ned(self, yaw_e):
         """
         Converte yaw da ENU a NED.
-        yaw_ned = yaw_enu - pi/2 (normalizzato)
+        yaw_ned = yaw_enu - pi/2 
         """
         yaw_n = float(yaw_e - np.pi/2.0)
         # normalizza in [-pi, pi]
