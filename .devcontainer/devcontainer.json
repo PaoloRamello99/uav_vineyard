@@ -7,7 +7,7 @@
   "workspaceFolder": "/workspaces/uav_vineyard",
   "remoteUser": "ros",
   "runArgs": [
-    "--net=host",
+    "--network=host",
     "--privileged",
     "--name=uav_vineyard_dev",
     "--volume=/tmp/.X11-unix:/tmp/.X11-unix",
@@ -16,7 +16,9 @@
     "--device-cgroup-rule=c 189:* rw",
     "--security-opt=seccomp:unconfined",
     "--security-opt=apparmor:unconfined",
-    "--ipc=host"
+    "--ipc=host",
+    "--cap-add=NET_ADMIN",
+    "--cap-add=NET_RAW"
   ],
   "containerEnv": {
     "DISPLAY": "${localEnv:DISPLAY}",
@@ -25,8 +27,7 @@
     "PULSE_SERVER": "${localEnv:PULSE_SERVER}",
     "QT_X11_NO_MITSHM": "1",
     "ROS_DOMAIN_ID": "0",
-    "RMW_IMPLEMENTATION": "rmw_fastrtps_cpp",
-    "ROS_DISCOVERY_SERVER": "localhost"
+    "RMW_IMPLEMENTATION": "rmw_fastrtps_cpp"
   },
   "customizations": {
     "vscode": {
