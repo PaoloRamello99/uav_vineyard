@@ -35,7 +35,7 @@ RUN python3 -m pip install --no-cache-dir \
 # -------------------------------------------------------------
 # PX4
 # -------------------------------------------------------------
-RUN git clone https://github.com/PX4/PX4-Autopilot.git --branch=main --recursive
+RUN git clone https://github.com/PX4/PX4-Autopilot.git --branch=release/1.16 --recursive
 RUN bash ./PX4-Autopilot/Tools/setup/ubuntu.sh
 
 # -------------------------------------------------------------
