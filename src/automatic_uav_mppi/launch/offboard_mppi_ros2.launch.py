@@ -12,10 +12,6 @@ def generate_launch_description():
         output='screen',
         emulate_tty=True,
         parameters=[{'use_sim_time': True}],
-        remappings=[
-            ("fmu/out/vehicle_status", "fmu/out/vehicle_status_v1"),
-            ("fmu/out/vehicle_local_position", "fmu/out/vehicle_local_position_v1"),
-        ],
     )
 
     serpentine_trajectory = Node(

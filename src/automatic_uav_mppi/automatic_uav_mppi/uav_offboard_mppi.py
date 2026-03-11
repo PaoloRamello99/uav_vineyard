@@ -35,7 +35,7 @@ class UAVOffboardMPPI(Node):
             reliability=QoSReliabilityPolicy.BEST_EFFORT,
             durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
             history=QoSHistoryPolicy.KEEP_LAST,
-            depth=10,
+            depth=1,
         )
 
         self.in_takeoff_mode = False
@@ -183,7 +183,6 @@ class UAVOffboardMPPI(Node):
             .double_value
         )
 
-
         self.landing_auto_exit = (
             self.get_parameter("landing.auto_exit").get_parameter_value().bool_value
         )
@@ -197,7 +196,6 @@ class UAVOffboardMPPI(Node):
             .get_parameter_value()
             .double_value
         )
-
 
         self.n_samples = (
             self.get_parameter("mppi.n_samples").get_parameter_value().integer_value
@@ -273,24 +271,19 @@ class UAVOffboardMPPI(Node):
         self.filtered_pitch_rate = 0.0
         self.filtered_yaw_rate = 0.0
 
+        self.rot_ned_to_enu = R.from_matrix(
+            np.array([[0, 1, 0], [1, 0, 0], [0, 0, -1]])
+        )
 
-        self.rot_ned_to_enu = R.from_matrix(np.array([
-            [0, 1, 0],
-            [1, 0, 0],
-            [0, 0, -1]
-        ]))
-        
-        self.rot_frd_to_flu = R.from_matrix(np.array([
-            [1, 0, 0],
-            [0, -1, 0],
-            [0, 0, -1]
-        ]))
+        self.rot_frd_to_flu = R.from_matrix(
+            np.array([[1, 0, 0], [0, -1, 0], [0, 0, -1]])
+        )
 
         self.landing_stable_counter = 0
 
         self.create_subscription(
             VehicleLocalPosition,
-            "/fmu/out/vehicle_local_position_v1",
+            "/fmu/out/vehicle_local_position",
             self.local_position_callback_,
             self.px4_qos,
         )
@@ -567,7 +560,7 @@ class UAVOffboardMPPI(Node):
         cmd = VehicleCommand()
         cmd.timestamp = int(Clock().now().nanoseconds / 1000)
         cmd.command = VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM
-        cmd.param1 = 0.0   # DISARM
+        cmd.param1 = 0.0  # DISARM
         cmd.param2 = 0.0
         cmd.target_system = 1
         cmd.target_component = 1
@@ -637,7 +630,6 @@ class UAVOffboardMPPI(Node):
             self.in_landing_mode = False
             self.get_logger().info("Received HOLD state command", once=True)
             return
-        
 
         elif uav_state == "PRE_LAND_HOLD":
             self.ref_pos_[0] = msg.poses[0].position.x
@@ -660,7 +652,7 @@ class UAVOffboardMPPI(Node):
             self.in_landing_mode = False
             self.get_logger().info("Received PRE LANDING HOLD state command", once=True)
             return
-        
+
         elif uav_state == "LANDING":
             self.ref_pos_[0] = msg.poses[0].position.x
             self.ref_pos_[1] = msg.poses[0].position.y
@@ -677,7 +669,6 @@ class UAVOffboardMPPI(Node):
             self.in_hold_mode = False
             self.in_pre_land_mode = False
             self.in_landing_mode = False
-
 
         else:
             self.in_takeoff_mode = False
@@ -745,7 +736,11 @@ class UAVOffboardMPPI(Node):
             # Continue with the rest of the callback but skip auto commands
         elif self.vehicle_status_received:
             # Auto arm logic
-            if self.auto_arm and not self.landing_complete and self.arm_state == VehicleStatus.ARMING_STATE_DISARMED:
+            if (
+                self.auto_arm
+                and not self.landing_complete
+                and self.arm_state == VehicleStatus.ARMING_STATE_DISARMED
+            ):
                 self.get_logger().info(
                     "Sending auto arm command", throttle_duration_sec=1.0
                 )
@@ -843,14 +838,11 @@ class UAVOffboardMPPI(Node):
                 )
 
             return
-        
-
 
         if (
             self.in_landing_mode
             and self.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD
         ):
-
             # --- MPPI still running for cost monitoring ---
             current_state = self.prepare_current_state()
             reference_trajectory = self.prepare_reference_trajectory()
@@ -934,7 +926,6 @@ class UAVOffboardMPPI(Node):
 
             # Disarm only after stable contact
             if self.landing_stable_counter > 25:
-
                 if self.arm_state == VehicleStatus.ARMING_STATE_ARMED:
                     self.send_disarm_command()
                     self.get_logger().info("Landing complete - Disarm", once=True)
@@ -944,7 +935,6 @@ class UAVOffboardMPPI(Node):
                 self.takeoff_complete = False
                 self.in_landing_mode = False
                 self.landing_complete = True
-                
 
             if self.control_counter % 50 == 0:
                 self.get_logger().info(
@@ -952,14 +942,6 @@ class UAVOffboardMPPI(Node):
                 )
 
             return
-
-
-
-
-
-
-
-
 
         try:
             current_state = self.prepare_current_state()
@@ -1008,13 +990,11 @@ class UAVOffboardMPPI(Node):
                     f"rates=[{roll_rate:.2f}, {pitch_rate:.2f}, {yaw_rate:.2f}]"
                 )
 
-
             if self.in_pre_land_mode and self.control_counter % 50 == 0:
                 self.get_logger().info(
                     f"PRE LANDING HOLD MPPI: thrust={thrust:.2f}N, "
                     f"rates=[{roll_rate:.2f}, {pitch_rate:.2f}, {yaw_rate:.2f}]"
                 )
-
 
             if self.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD:
                 thrust_normalized = self.normalize_thrust(thrust)
